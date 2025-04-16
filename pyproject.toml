@@ -1,0 +1,15 @@
+[project]
+name = "algonauts"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastprogress>=1.0.3",
+    "h5py>=3.13.0",
+    "ipykernel>=6.29.5",
+    "matplotlib>=3.10.1",
+    "numpy==1.23.5",
+    "torch>=2.6.0",
+    "wandb>=0.19.9",
+]

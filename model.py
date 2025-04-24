@@ -78,7 +78,10 @@ class PredictionTransformer(nn.Module):
 
     def forward(self, x, attn_mask):
         x = self.pos_encoder(x)
-        x = self.transformer(x, src_key_padding_mask=~attn_mask)
+        seq_len = x.size(1)
+        device = x.device
+        causal_mask = torch.triu(torch.ones(seq_len, seq_len, device=device), diagonal=1).bool()
+        x = self.transformer(x, mask=causal_mask, src_key_padding_mask=~attn_mask)
         return self.output_head(x)
 
 

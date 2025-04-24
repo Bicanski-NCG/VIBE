@@ -89,10 +89,12 @@ def train():
     config = wandb.config
 
     # --- Dataset ---
+    norm_stats = torch.load("normalization_stats.pt")
     ds = FMRI_Dataset("fmri", "Features/Audio",
                       "Features/Visual/InternVideo/features_chunk1.49_len9_before6_frames120_imgsize224",
-                      "Features/Text")
-    train_ds, valid_ds = split_dataset_by_season(ds, val_season="6")
+                      "Features/Text",
+                      )
+    train_ds, valid_ds = split_dataset_by_season(ds, val_season="6", train_noise_std=0.0)
     train_loader = DataLoader(train_ds, batch_size=config.batch_size, shuffle=True,
                               collate_fn=collate_fn, num_workers=8)
     valid_loader = DataLoader(valid_ds, batch_size=config.batch_size, shuffle=False,

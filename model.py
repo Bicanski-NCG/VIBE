@@ -3,43 +3,52 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class ModalityFusionTransformer(nn.Module):
-    def __init__(self, input_dims, subject_count=4, hidden_dim=1024, num_layers=1, num_heads=4, dropout_rate=0.3):
+class ModalityFusionSimple(nn.Module):
+    def __init__(self, input_dims, subject_count=4, hidden_dim=512, embedding_dim=128, dropout_rate=0.3):
         super().__init__()
         self.projections = nn.ModuleDict({
-            modality: nn.Linear(dim, hidden_dim)
+            modality: nn.Sequential(
+                nn.Linear(dim, hidden_dim),
+                # Maybe add activation/norm here if needed
+                nn.LayerNorm(hidden_dim),
+                nn.GELU(),
+                nn.Dropout(dropout_rate) # Add dropout after projection
+            )
             for modality, dim in input_dims.items()
         })
+        # Total projected dim
+        projected_dim = hidden_dim * len(input_dims)
 
-        self.subject_embeddings = nn.Embedding(subject_count, hidden_dim)
+        self.subject_embeddings = nn.Embedding(subject_count, embedding_dim) # Keep subject embedding size reasonable
 
-        encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_dim, nhead=num_heads, dim_feedforward=hidden_dim*4, batch_first=True, norm_first=True, activation='gelu', dropout=dropout_rate)
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        # Optional: A final linear layer to mix concatenated features and subject embedding
+        # Adjust input dimension calculation if subject embedding is concatenated vs added
+        self.combined_input_dim = projected_dim + embedding_dim # If concatenating subject embedding
+
 
     def forward(self, inputs: dict, subject_ids: torch.LongTensor):
-        """
-        inputs: dict with keys matching input_dims, each of shape (B, T, D)
-        subject_ids: tensor of shape (B,)
-        """
         B, T, _ = next(iter(inputs.values())).shape
 
         projected = [
-            proj(inputs[name])
-            for name, proj in self.projections.items()
+            self.projections[name](inputs[name]) # (B, T, hidden_dim)
+            for name in self.projections.keys() # Ensure consistent order
         ]
-        x = torch.stack(projected, dim=2)  # (B, T, num_modalities, D)
+        x = torch.cat(projected, dim=-1)  # (B, T, hidden_dim * num_modalities)
 
-        subj_emb = self.subject_embeddings(torch.tensor(subject_ids, device=x.device)).unsqueeze(1).unsqueeze(2)  # (B, 1, 1, D)
-        subj_emb = subj_emb.expand(-1, T, 1, -1)  # (B, T, 1, D)
+        # Subject embedding - Choose one way:
+        # Option A: Concatenate
+        subj_emb = self.subject_embeddings(torch.tensor(subject_ids, device=x.device)).unsqueeze(1) # (B, 1, hidden_dim)
+        subj_emb = subj_emb.expand(-1, T, -1) # (B, T, hidden_dim)
+        x = torch.cat([x, subj_emb], dim=-1) # (B, T, hidden_dim * num_modalities + hidden_dim)
 
-        x = torch.cat([x, subj_emb], dim=2)  # (B, T, num_modalities+1, D)
-        x = x.view(B * T, x.shape[2], -1)    # (B*T, num_modalities+1, D)
+        # Option B: Add (if using a mixer that brings back to hidden_dim, maybe add *after* mixer?)
+        # subj_emb = self.subject_embeddings(subject_ids).unsqueeze(1) # (B, 1, hidden_dim)
+        # subj_emb = subj_emb.expand(-1, T, -1) # (B, T, hidden_dim)
+        # Ensure dimensions match if adding directly to some intermediate state
+        # If adding subject embedding after mixer (adjust mixer output dim if needed)
+        # fused = fused + subj_emb # If mixer outputs hidden_dim
 
-        fused = self.transformer(x)  # (B*T, num_modalities+1, D)
-        fused = fused.mean(dim=1)   # (B*T, D)
-        fused = fused.view(B, T, -1)  # (B, T, D)
-
-        return fused
+        return x
 
 
 class FixedPositionalEncoding(nn.Module):
@@ -74,10 +83,10 @@ class PredictionTransformer(nn.Module):
 
 
 class FMRIModel(nn.Module):
-    def __init__(self, input_dims, output_dim, subject_count=4, hidden_dim=1024, max_len=500):
+    def __init__(self, input_dims, output_dim, subject_count=4, hidden_dim=256, max_len=500):
         super().__init__()
-        self.encoder = ModalityFusionTransformer(input_dims, subject_count, hidden_dim=hidden_dim)
-        self.predictor = PredictionTransformer(hidden_dim=hidden_dim, output_dim=output_dim, max_len=max_len)
+        self.encoder = ModalityFusionSimple(input_dims, subject_count, hidden_dim=hidden_dim)
+        self.predictor = PredictionTransformer(hidden_dim=self.encoder.combined_input_dim, output_dim=output_dim, max_len=max_len)
 
     def forward(self, audio, video, text, subject_ids, attention_mask):
         inputs = {'audio': audio, 'video': video, 'text': text}

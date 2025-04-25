@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 
 class ModalityFusionTransformer(nn.Module):
-    def __init__(self, input_dims, subject_count=4, hidden_dim=1024, num_layers=1, num_heads=4, dropout_rate=0.2, subject_dropout_prob=0.4):
+    def __init__(self, input_dims, subject_count=4, hidden_dim=1024, num_layers=1, num_heads=4, dropout_rate=0.3, subject_dropout_prob=0.4):
         super().__init__()
         self.projections = nn.ModuleDict({
             modality: nn.Linear(dim, hidden_dim)
@@ -66,7 +66,7 @@ class FixedPositionalEncoding(nn.Module):
 
 
 class PredictionTransformer(nn.Module):
-    def __init__(self, hidden_dim=256, output_dim=1000, num_layers=1, num_heads=8, max_len=600, dropout=0.2):
+    def __init__(self, hidden_dim=256, output_dim=1000, num_layers=1, num_heads=8, max_len=600, dropout=0.3):
         super().__init__()
         self.pos_encoder = FixedPositionalEncoding(hidden_dim, max_len)
         encoder_layer = nn.TransformerEncoderLayer(

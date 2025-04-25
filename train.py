@@ -80,7 +80,7 @@ def train():
     # --- WandB Init ---
     wandb.init(project="fmri-model", config={
         "epochs": 150,
-        "batch_size": 4,
+        "batch_size": 8,
         "lr": 1e-4,
         "weight_decay": 1e-4,
         "device": "cuda:1",
@@ -91,7 +91,7 @@ def train():
     # --- Dataset ---
     norm_stats = torch.load("normalization_stats.pt")
     ds = FMRI_Dataset("fmri", "Features/Audio",
-                      "Features/Visual/InternVideo/features_chunk1.49_len9_before6_frames120_imgsize224",
+                      "Features/Visual/InternVideo/features_chunk1.49_len6_before6_frames120_imgsize224",
                       "Features/Text",
                       )
     train_ds, valid_ds = split_dataset_by_season(ds, val_season="6", train_noise_std=0.0)
@@ -104,6 +104,7 @@ def train():
     model = FMRIModel({'audio': 2048, 'video': 512, 'text': 2048}, 1000, subject_count=4, max_len=600)
     model.to(config.device)
     log_model_params(model)
+    save_initial_state(model)
 
     optimizer = optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.epochs)
@@ -111,6 +112,7 @@ def train():
     best_val_loss = float('inf')
     patience_counter = 0
     global_step = 0
+    best_val_epoch = 0
 
     for epoch in range(config.epochs):
         train_loss, global_step = run_epoch(train_loader, model, optimizer,
@@ -133,6 +135,7 @@ def train():
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
+            best_val_epoch = epoch + 1
             torch.save(model.state_dict(), 'best_model.pt')
             wandb.save('best_model.pt')
             print(f"✅ Saved new best model at epoch {epoch + 1}")
@@ -148,20 +151,47 @@ def train():
     wandb.run.summary["best_val_pearson"] = best_val_loss
 
     # --- Retraining on full dataset ---
-    print("🔁 Retraining best model on the full dataset...")
-    model.load_state_dict(torch.load('best_model.pt'))
+    print("🔁 Reloading initial model and retraining from scratch on full dataset...")
+    model = FMRIModel({'audio': 2048, 'video': 512, 'text': 2048}, 1000, subject_count=4, max_len=600)
+    model.to(config.device)
+    load_initial_state(model)
+
     full_loader = DataLoader(ds, batch_size=config.batch_size, shuffle=True,
                              collate_fn=collate_fn, num_workers=8)
-    optimizer = optim.AdamW(model.parameters(), lr=config.lr, weight_decay=1e-5)
-
-    for epoch in range(2):
+    optimizer = optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=best_val_epoch)
+    global_step = 0
+    for epoch in range(best_val_epoch):
         full_loss, _ = run_epoch(full_loader, model, optimizer,
                                  masked_negative_pearson_loss, config.device, is_train=True)
+        wandb.log({"full_dataset_loss": full_loss, "retrain_epoch": epoch + 1})
+        scheduler.step()
         print(f"🔁 Retrain Epoch {epoch + 1}: Full Dataset Loss = {full_loss:.4f}")
 
     torch.save(model.state_dict(), 'final_model.pt')
     wandb.save('final_model.pt')
     print("✅ Final model trained on full dataset and saved.")
+
+def save_initial_state(model, path="initial_model.pt"):
+    torch.save(model.state_dict(), path)
+    random_state = {
+        "random": random.getstate(),
+        "numpy": np.random.get_state(),
+        "torch": torch.get_rng_state(),
+        "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+    }
+    torch.save(random_state, "initial_random_state.pt")
+
+
+def load_initial_state(model, path="initial_model.pt"):
+    model.load_state_dict(torch.load(path))
+    random_state = torch.load("initial_random_state.pt", weights_only=False)
+    random.setstate(random_state["random"])
+    np.random.set_state(random_state["numpy"])
+    torch.set_rng_state(random_state["torch"])
+    if torch.cuda.is_available() and random_state["cuda"] is not None:
+        torch.cuda.set_rng_state_all(random_state["cuda"])
+
 
 
 if __name__ == "__main__":

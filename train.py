@@ -7,6 +7,8 @@ import numpy as np
 
 from data import FMRI_Dataset, split_dataset_by_season, collate_fn
 from model import FMRIModel
+from losses import masked_negative_pearson_loss, sample_similarity_loss, roi_similarity_loss
+from torch import nn
 
 
 # ------------------- Utility Functions -------------------
@@ -18,25 +20,6 @@ def set_seed(seed: int = 42):
     torch.cuda.manual_seed_all(seed)
 
 
-def masked_negative_pearson_loss(pred, target, mask, eps=1e-8):
-    mask = mask.unsqueeze(-1)
-    pred = pred * mask
-    target = target * mask
-
-    pred_mean = pred.sum(dim=1) / (mask.sum(dim=1) + eps)
-    target_mean = target.sum(dim=1) / (mask.sum(dim=1) + eps)
-
-    pred_centered = pred - pred_mean.unsqueeze(1)
-    target_centered = target - target_mean.unsqueeze(1)
-
-    numerator = (pred_centered * target_centered * mask).sum(dim=1)
-    denominator = torch.sqrt(((pred_centered**2 * mask).sum(dim=1)) *
-                             ((target_centered**2 * mask).sum(dim=1)) + eps)
-
-    corr = numerator / (denominator + eps)
-    return -corr.mean()
-
-
 def log_model_params(model):
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     wandb.log({'model/total_params': total_params})
@@ -44,8 +27,11 @@ def log_model_params(model):
 
 # ------------------- Training & Evaluation -------------------
 
-def run_epoch(loader, model, optimizer, loss_fn, device, is_train=True, global_step=None):
-    epoch_loss = 0.0
+def run_epoch(loader, model, optimizer, device, is_train=True, global_step=None, lambda_sample=1.0, lambda_roi=1.0, lambda_mse=1.0):
+    epoch_negative_corr_loss = 0.0
+    epoch_sample_loss = 0.0
+    epoch_roi_loss = 0.0
+    epoch_mse_loss = 0.0
     model.train() if is_train else model.eval()
 
     for batch in loader:
@@ -61,37 +47,56 @@ def run_epoch(loader, model, optimizer, loss_fn, device, is_train=True, global_s
 
         with torch.set_grad_enabled(is_train):
             pred = model(audio, video, text, subj_ids, attn_mask)
-            loss = loss_fn(pred, fmri, attn_mask)
+            negative_corr_loss = masked_negative_pearson_loss(pred, fmri, attn_mask)
+            sample_loss = sample_similarity_loss(pred, fmri, attn_mask)
+            roi_loss = roi_similarity_loss(pred, fmri, attn_mask)
+            mse_loss = nn.functional.mse_loss(pred, fmri)
+            loss = negative_corr_loss + lambda_sample * sample_loss + lambda_roi * roi_loss + lambda_mse * mse_loss
 
             if is_train:
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
                 optimizer.step()
                 if global_step is not None:
-                    wandb.log({"train_loss": loss.item(), "lr": optimizer.param_groups[0]['lr']}, step=global_step)
+                    wandb.log({"train_neg_corr_loss": negative_corr_loss.item(),
+                               "train_sample_loss": sample_loss.item(),
+                               "train_roi_loss": roi_loss.item(),
+                               "train_mse_loss": mse_loss.item()}, step=global_step,)
                     global_step += 1
 
-        epoch_loss += loss.item()
+        epoch_negative_corr_loss += negative_corr_loss.item()
+        epoch_sample_loss += sample_loss.item()
+        epoch_roi_loss += roi_loss.item()
+        epoch_mse_loss += mse_loss.item()
 
-    return epoch_loss / len(loader), global_step
+    epoch_negative_corr_loss /= len(loader)
+    epoch_sample_loss /= len(loader)
+    epoch_roi_loss /= len(loader)
+    epoch_mse_loss /= len(loader)
+
+    epoch_loss = epoch_negative_corr_loss + lambda_sample * epoch_sample_loss + lambda_roi * epoch_roi_loss + lambda_mse * epoch_mse_loss
+    return (epoch_loss, epoch_negative_corr_loss, epoch_sample_loss, epoch_roi_loss, epoch_mse_loss), global_step
 
 
 def train():
     # --- WandB Init ---
     wandb.init(project="fmri-model", config={
         "epochs": 150,
-        "batch_size": 8,
+        "batch_size": 4,
         "lr": 1e-4,
         "weight_decay": 1e-4,
         "device": "cuda:1",
-        "early_stop_patience": 3
+        "early_stop_patience": 3,
+        "lambda_sample": 0.1,   
+        "lambda_roi": 0.1,
+        "lambda_mse": 0.1
     })
     config = wandb.config
 
     # --- Dataset ---
     norm_stats = torch.load("normalization_stats.pt")
     ds = FMRI_Dataset("fmri", "Features/Audio",
-                      "Features/Visual/InternVideo/features_chunk1.49_len6_before6_frames120_imgsize224",
+                      "Features/Visual/InternVideo/features_chunk1.49_len9_before6_frames120_imgsize224",
                       "Features/Text",
                       )
     train_ds, valid_ds = split_dataset_by_season(ds, val_season="6", train_noise_std=0.0)
@@ -115,24 +120,28 @@ def train():
     best_val_epoch = 0
 
     for epoch in range(config.epochs):
-        train_loss, global_step = run_epoch(train_loader, model, optimizer,
-                                            masked_negative_pearson_loss,
-                                            config.device, is_train=True, global_step=global_step)
+        train_loss_tuple, global_step = run_epoch(train_loader, model, optimizer,
+                                            config.device, is_train=True, global_step=global_step,
+                                            lambda_sample=config.lambda_sample, lambda_roi=config.lambda_roi, lambda_mse=config.lambda_mse)
 
-        val_loss, _ = run_epoch(valid_loader, model, optimizer,
-                                masked_negative_pearson_loss,
-                                config.device, is_train=False)
-
-        wandb.log({
-            "epoch": epoch + 1,
-            "avg_train_loss": train_loss,
-            "avg_val_loss": val_loss,
-        })
+        val_loss_tuple, _ = run_epoch(valid_loader, model, optimizer,
+                                config.device, is_train=False,
+                                lambda_sample=config.lambda_sample, lambda_roi=config.lambda_roi, lambda_mse=config.lambda_mse)
+        
+        wandb.log({"epoch_loss_train": train_loss_tuple[0],
+                   "epoch_loss_valid": val_loss_tuple[0],
+                   "epoch_loss_train_neg_corr": train_loss_tuple[1],
+                   "epoch_loss_valid_neg_corr": val_loss_tuple[1],
+                   "epoch_loss_train_sample": train_loss_tuple[2],
+                   "epoch_loss_valid_sample": val_loss_tuple[2],
+                   "epoch_loss_train_roi": train_loss_tuple[3],
+                   "epoch_loss_valid_roi": val_loss_tuple[3],
+                   "epoch_loss_train_mse": train_loss_tuple[4],
+                   "epoch_loss_valid_mse": val_loss_tuple[4]}, step=global_step)
 
         scheduler.step()
-
-        print(f"Epoch {epoch + 1}: Train Loss = {train_loss:.4f}, Val Loss = {val_loss:.4f}")
-
+        val_loss = val_loss_tuple[1]
+        print(f"Epoch {epoch + 1}: Train Neg Corr Loss = {train_loss_tuple[1]:.4f}, Val Neg Corr Loss = {val_loss_tuple[1]:.4f}")
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_val_epoch = epoch + 1
@@ -162,11 +171,19 @@ def train():
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=best_val_epoch)
     global_step = 0
     for epoch in range(best_val_epoch):
-        full_loss, _ = run_epoch(full_loader, model, optimizer,
-                                 masked_negative_pearson_loss, config.device, is_train=True)
-        wandb.log({"full_dataset_loss": full_loss, "retrain_epoch": epoch + 1})
+        full_loss_tuple, _ = run_epoch(full_loader, model, optimizer,
+                                 config.device, is_train=True,
+                                 lambda_sample=config.lambda_sample, lambda_roi=config.lambda_roi, lambda_mse=config.lambda_mse)
+        
+        wandb.log({"full_dataset_loss": full_loss_tuple[0], 
+                   "full_dataset_loss_neg_corr": full_loss_tuple[1],
+                   "full_dataset_loss_sample": full_loss_tuple[2],
+                   "full_dataset_loss_roi": full_loss_tuple[3],
+                   "full_dataset_loss_mse": full_loss_tuple[4],
+                   "retrain_epoch": epoch + 1})
+
         scheduler.step()
-        print(f"🔁 Retrain Epoch {epoch + 1}: Full Dataset Loss = {full_loss:.4f}")
+        print(f"Epoch {epoch + 1}: Full Dataset Neg Corr Loss = {full_loss_tuple[1]:.4f}")
 
     torch.save(model.state_dict(), 'final_model.pt')
     wandb.save('final_model.pt')

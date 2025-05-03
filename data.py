@@ -9,7 +9,7 @@ from torch.nn.utils.rnn import pad_sequence
 
 class FMRI_Dataset(Dataset):
     def __init__(self, root_folder_fmri, audio_feature_path, video_feature_path, text_feature_path,
-                 noise_std=0.0, normalization_stats=None):
+                 noise_std=0.0, normalization_stats=None, oversample_factor=2):
         super().__init__()
         self.root_folder = root_folder_fmri
         self.fmri_files = sorted(glob.glob(os.path.join(root_folder_fmri, "sub-0?", "func", "*.h5")))
@@ -20,6 +20,7 @@ class FMRI_Dataset(Dataset):
 
         self.noise_std = noise_std
         self.normalization_stats = normalization_stats
+        self.oversample_factor = oversample_factor
 
         self.subject_name_id_dict = {
             "sub-01": 0,
@@ -34,12 +35,17 @@ class FMRI_Dataset(Dataset):
             with h5py.File(fmri_file, 'r') as h5file:
                 for dataset_name in h5file.keys():
                     num_samples = h5file[dataset_name].shape[0]
-                    self.samples.append({
+                    sample = {
                         'subject_id': subject_id,
                         'fmri_file': fmri_file,
                         'dataset_name': dataset_name,
                         'num_samples': num_samples
-                    })
+                    }
+                    self.samples.append(sample)
+
+                    if is_movie_sample(fmri_file):
+                        for _ in range(self.oversample_factor - 1):  # 1 already added
+                            self.samples.append(sample.copy())
 
     def __len__(self):
         return len(self.samples)
@@ -156,3 +162,7 @@ def collate_fn(batch):
         'fmri': fmri_padded,
         'attention_masks': attention_masks
     }
+
+def is_movie_sample(dataset_name):
+    # Customize this check based on how movie files are named
+    return "movie" in dataset_name.lower() 

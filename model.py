@@ -120,6 +120,34 @@ class PredictionTransformer(nn.Module):
         x = self.transformer(x, mask=causal_mask, src_key_padding_mask=~attn_mask)
         return self.output_head(x)
 
+class PredictionLSTM(nn.Module):
+    def __init__(self, input_dim, output_dim=1000, num_layers=2, dropout=0.3):
+        super().__init__()
+        self.lstm = nn.LSTM(
+            input_dim,
+            input_dim*4,
+            num_layers=num_layers,
+            dropout=dropout if num_layers > 1 else 0,
+            batch_first=True,
+            bidirectional=False,
+        )
+        self.output_head = nn.Linear(input_dim*4, output_dim)
+
+    def forward(self, x, attn_mask):
+        # Pack the sequence to handle variable-length sequences
+        lengths = attn_mask.sum(dim=1)
+        packed = nn.utils.rnn.pack_padded_sequence(x, lengths.cpu(), batch_first=True, enforce_sorted=False)
+
+        packed_output, _ = self.lstm(packed)
+
+        output, _ = nn.utils.rnn.pad_packed_sequence(
+            packed_output,
+            batch_first=True,
+            total_length=attn_mask.size(1)  # <<< Fix
+        )
+        return self.output_head(output)
+
+
 
 class FMRIModel(nn.Module):
     def __init__(
@@ -136,14 +164,16 @@ class FMRIModel(nn.Module):
         self.encoder = ModalityFusionTransformer(
             input_dims, subject_count, hidden_dim=hidden_dim, fuse_mode=fuse_mode
         )
-        self.predictor = PredictionTransformer(
-            hidden_dim=(
-                hidden_dim * (len(input_dims) + 1)
-                if fuse_mode == "concat"
-                else hidden_dim
-            ),
+
+        fused_dim = (
+            hidden_dim * (len(input_dims) + 1)
+            if fuse_mode == "concat"
+            else hidden_dim
+        )
+
+        self.predictor = PredictionLSTM(
+            input_dim=fused_dim,
             output_dim=output_dim,
-            max_len=max_len,
         )
         self.mask_prob = mask_prob
 

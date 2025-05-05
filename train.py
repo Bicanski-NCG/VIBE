@@ -17,7 +17,7 @@ from torch import nn
 feature_paths = {
     "audio": "Features/Audio",
     "video_low_level": "Features/Visual/SlowR50",
-    "video_high_level": "Features/Visual/InternVideo/features_chunk1.49_len60_before50_frames120_imgsize224",
+    "video_high_level": "Features/Visual/InternVideo/features_chunk1.49_len6_before6_frames120_imgsize224",
     "text": "Features/Text"
 }
 
@@ -289,7 +289,7 @@ def train():
         optimizer, T_max=best_val_epoch
     )
     global_step = 0
-    for epoch in range(best_val_epoch - 1):
+    for epoch in range(best_val_epoch):
         full_loss_tuple, _ = run_epoch(
             full_loader,
             model,

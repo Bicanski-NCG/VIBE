@@ -11,7 +11,7 @@ class ModalityFusionTransformer(nn.Module):
         num_layers=1,
         num_heads=8,
         dropout_rate=0.3,
-        subject_dropout_prob=0.4,
+        subject_dropout_prob=0.2,
         fuse_mode: str = "concat",
     ):
         super().__init__()
@@ -91,7 +91,7 @@ class PredictionTransformer(nn.Module):
         self,
         hidden_dim=256,
         output_dim=1000,
-        num_layers=1,
+        num_layers=2,
         num_heads=8,
         max_len=600,
         dropout=0.3,
@@ -137,7 +137,11 @@ class FMRIModel(nn.Module):
             input_dims, subject_count, hidden_dim=hidden_dim, fuse_mode=fuse_mode
         )
         self.predictor = PredictionTransformer(
-            hidden_dim=hidden_dim * (len(input_dims)+1) if fuse_mode == "concat" else hidden_dim,
+            hidden_dim=(
+                hidden_dim * (len(input_dims) + 1)
+                if fuse_mode == "concat"
+                else hidden_dim
+            ),
             output_dim=output_dim,
             max_len=max_len,
         )

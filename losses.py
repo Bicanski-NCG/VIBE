@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 
-def masked_negative_pearson_loss(pred, target, mask, eps=1e-8, zero_center=False):
+def masked_negative_pearson_loss(pred, target, mask, eps=1e-8, zero_center=True):
     mask = mask.unsqueeze(-1)
     pred = pred * mask
     target = target * mask

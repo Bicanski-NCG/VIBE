@@ -9,7 +9,7 @@ from torch.nn.utils.rnn import pad_sequence
 
 class FMRI_Dataset(Dataset):
     def __init__(self, root_folder_fmri, audio_feature_path, video_feature_path, text_feature_path,
-                 noise_std=0.0, normalization_stats=None, oversample_factor=2):
+                 noise_std=0.0, normalization_stats=None, oversample_factor=1):
         super().__init__()
         self.root_folder = root_folder_fmri
         self.fmri_files = sorted(glob.glob(os.path.join(root_folder_fmri, "sub-0?", "func", "*.h5")))

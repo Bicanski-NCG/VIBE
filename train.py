@@ -14,6 +14,22 @@ from losses import (
 )
 from torch import nn
 
+feature_paths = {
+    "audio": "Features/Audio",
+    "video_low_level": "Features/Visual/SlowR50",
+    "video_high_level": "Features/Visual/InternVideo/features_chunk1.49_len60_before50_frames120_imgsize224",
+    "text": "Features/Text"
+}
+
+input_dims = {
+    "audio": 2048,
+    "video_low_level": 8192,
+    "video_high_level": 512,
+    "text": 2048
+}
+
+modality_keys = list(input_dims.keys())
+
 
 # ------------------- Utility Functions -------------------
 
@@ -51,10 +67,8 @@ def run_epoch(
     model.train() if is_train else model.eval()
 
     for batch in loader:
-        audio = batch["audio"].to(device)
-        video = batch["video"].to(device)
-        text = batch["text"].to(device)
-        subj_ids = batch["subject_ids"]
+        features = {k: batch[k].to(device) for k in modality_keys}
+        subject_ids = batch["subject_ids"]
         fmri = batch["fmri"].to(device)
         attn_mask = batch["attention_masks"].to(device)
 
@@ -62,7 +76,7 @@ def run_epoch(
             optimizer.zero_grad()
 
         with torch.set_grad_enabled(is_train):
-            pred = model(audio, video, text, subj_ids, attn_mask)
+            pred = model(features, subject_ids, attn_mask)
             negative_corr_loss = masked_negative_pearson_loss(pred, fmri, attn_mask)
             sample_loss = sample_similarity_loss(pred, fmri, attn_mask)
             roi_loss = roi_similarity_loss(pred, fmri, attn_mask)
@@ -129,8 +143,8 @@ def train():
             "lambda_sample": 0.1,
             "lambda_roi": 0.1,
             "lambda_mse": 0.1,
-            "fuse_mode": "mean",
-            "hidden_dim": 1024,
+            "fuse_mode": "concat",
+            "hidden_dim": 256,
         },
     )
     config = wandb.config
@@ -139,9 +153,7 @@ def train():
     norm_stats = torch.load("normalization_stats.pt")
     ds = FMRI_Dataset(
         "fmri",
-        "Features/Audio",
-        "Features/Visual/SlowR50",
-        "Features/Text",
+        feature_paths=feature_paths,
     )
     train_ds, valid_ds = split_dataset_by_season(
         ds, val_season="6", train_noise_std=0.0
@@ -163,7 +175,7 @@ def train():
 
     # --- Model ---
     model = FMRIModel(
-        {"audio": 2048, "video": 8192, "text": 2048},
+        input_dims,
         1000,
         fuse_mode=config.fuse_mode,
         hidden_dim=config.hidden_dim,
@@ -253,7 +265,7 @@ def train():
     # --- Retraining on full dataset ---
     print("🔁 Reloading initial model and retraining from scratch on full dataset...")
     model = FMRIModel(
-        {"audio": 2048, "video": 8192, "text": 2048},
+        input_dims,
         1000,
         fuse_mode=config.fuse_mode,
         hidden_dim=config.hidden_dim,

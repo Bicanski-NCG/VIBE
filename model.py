@@ -123,15 +123,16 @@ class PredictionTransformer(nn.Module):
 class PredictionLSTM(nn.Module):
     def __init__(self, input_dim, output_dim=1000, num_layers=2, dropout=0.3):
         super().__init__()
+        hidden_dim = input_dim*4
         self.lstm = nn.LSTM(
             input_dim,
-            input_dim*4,
+            hidden_dim,
             num_layers=num_layers,
             dropout=dropout if num_layers > 1 else 0,
             batch_first=True,
             bidirectional=False,
         )
-        self.output_head = nn.Linear(input_dim*4, output_dim)
+        self.output_head = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, x, attn_mask):
         # Pack the sequence to handle variable-length sequences

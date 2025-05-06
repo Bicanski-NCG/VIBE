@@ -15,7 +15,7 @@ def masked_negative_pearson_loss(pred, target, mask, eps=1e-8, zero_center=True)
 
     numerator = (pred * target * mask).sum(dim=1)
     denominator = torch.sqrt(((pred**2 * mask).sum(dim=1)) *
-                             ((target**2 * mask).sum(dim=1)) + eps)
+                             ((target**2 * mask).sum(dim=1)))
 
     corr = numerator / (denominator + eps)
     return -corr.mean()

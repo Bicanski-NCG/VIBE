@@ -97,7 +97,7 @@ input_dims = {
     "audio": 2048,
     "video_low_level": 8192,
     "video_high_level": 512,
-    "text": 2048,
+    "text": 2048
 }
 model = FMRIModel(
     input_dims, 1000, hidden_dim=256, fuse_mode="concat", subject_count=4, max_len=600
@@ -109,8 +109,8 @@ model.eval()
 feature_paths = {
     "audio": "Features/Audio",
     "video_low_level": "Features/Visual/SlowR50",
-    "video_high_level": "Features/Visual/InternVideo/features_chunk1.49_len60_before50_frames120_imgsize224",
-    "text": "Features/Text",
+    "video_high_level": "Features/Visual/InternVideo/features_chunk1.49_len6_before6_frames120_imgsize224",
+    "text": "Features/Text"
 }
 predictions = predict_fmri_for_test_set(
     model=model,

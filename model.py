@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+import torch.nn.functional as F
 
 class ModalityFusionTransformer(nn.Module):
     def __init__(
@@ -9,10 +9,11 @@ class ModalityFusionTransformer(nn.Module):
         subject_count=4,
         hidden_dim=1024,
         num_layers=1,
-        num_heads=8,
+        num_heads=4,
         dropout_rate=0.3,
         subject_dropout_prob=0.2,
         fuse_mode: str = "concat",
+        use_transformer: bool = True
     ):
         super().__init__()
         self.fuse_mode = fuse_mode
@@ -27,16 +28,18 @@ class ModalityFusionTransformer(nn.Module):
         self.subject_embeddings = nn.Embedding(subject_count + 1, hidden_dim)
         self.null_subject_index = subject_count
 
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=hidden_dim,
-            nhead=num_heads,
-            dim_feedforward=hidden_dim * 4,
-            batch_first=True,
-            norm_first=True,
-            activation="gelu",
-            dropout=dropout_rate,
-        )
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        if use_transformer:
+            encoder_layer = nn.TransformerEncoderLayer(
+                d_model=hidden_dim,
+                nhead=num_heads,
+                dim_feedforward=hidden_dim * 4,
+                batch_first=True,
+                activation="gelu",
+                dropout=dropout_rate,
+            )
+            self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        else: 
+            self.transformer = nn.Identity()
 
     def forward(self, inputs: dict, subject_ids):
         B, T, _ = next(iter(inputs.values())).shape
@@ -89,26 +92,25 @@ class FixedPositionalEncoding(nn.Module):
 class PredictionTransformer(nn.Module):
     def __init__(
         self,
-        hidden_dim=256,
+        input_dim=256,
         output_dim=1000,
         num_layers=2,
-        num_heads=8,
-        max_len=600,
+        num_heads=16,
+        max_len=500,
         dropout=0.3,
     ):
         super().__init__()
-        self.pos_encoder = FixedPositionalEncoding(hidden_dim, max_len)
+        self.pos_encoder = FixedPositionalEncoding(input_dim, max_len)
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=hidden_dim,
+            d_model=input_dim,
             nhead=num_heads,
             dropout=dropout,
-            dim_feedforward=hidden_dim * 4,
+            dim_feedforward=input_dim * 4,
             batch_first=True,
-            norm_first=True,
             activation="gelu",
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-        self.output_head = nn.Linear(hidden_dim, output_dim)
+        self.output_head = nn.Linear(input_dim, output_dim)
 
     def forward(self, x, attn_mask):
         x = self.pos_encoder(x)
@@ -160,6 +162,7 @@ class FMRIModel(nn.Module):
         max_len=500,
         mask_prob=0.2,
         fuse_mode="concat",
+        use_hrf_conv=False
     ):
         super().__init__()
         self.encoder = ModalityFusionTransformer(
@@ -176,6 +179,20 @@ class FMRIModel(nn.Module):
             input_dim=fused_dim,
             output_dim=output_dim,
         )
+
+        self.use_hrf_conv = use_hrf_conv
+
+        if use_hrf_conv:
+            self.hrf_conv = nn.Conv1d(
+                in_channels=output_dim,
+                out_channels=output_dim,
+                kernel_size=5,
+                padding=0,
+                groups=output_dim,
+            )
+        else:
+            self.hrf_conv = nn.Identity()
+
         self.mask_prob = mask_prob
 
     def forward(self, features, subject_ids, attention_mask):
@@ -188,4 +205,12 @@ class FMRIModel(nn.Module):
             attention_mask[mask] = False
 
         fused = self.encoder(features, subject_ids)
-        return self.predictor(fused, attention_mask)
+        preds = self.predictor(fused, attention_mask)
+
+        if self.use_hrf_conv:
+            preds = preds.transpose(1, 2)
+            preds = F.pad(preds, (4, 0))
+            preds = self.hrf_conv(preds)
+            preds = preds.transpose(1, 2)
+
+        return preds

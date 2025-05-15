@@ -25,7 +25,8 @@ feature_paths = {
     "thinker_12": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_12", #torch.Size([1, 984, 2048])
     "thinker_24": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_24", #torch.Size([1, 984, 2048])
     "thinker_36": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_36", #torch.Size([1, 984, 2048])
-    "visual_cnn": "Features/Visual/SlowR50"
+    "visual_cnn": "Features/Visual/SlowR50",
+    "text": "Features/Text/Qwen3B_tr1.49_len60_before50"
 }
 
 input_dims = {
@@ -39,7 +40,8 @@ input_dims = {
     "thinker_12": 2048 * 2,
     "thinker_24": 2048 * 2,
     "thinker_36": 2048 * 2,
-    "visual_cnn": 8192
+    "visual_cnn": 8192,
+    "text": 2048
 }
 
 modality_keys = list(input_dims.keys())
@@ -153,7 +155,7 @@ def train():
             "lr": 1e-4,
             "weight_decay": 1e-4,
             "device": "cuda:1",
-            "early_stop_patience": 2,
+            "early_stop_patience": 1,
             "lambda_sample": 0.001,
             "lambda_roi": 0.001,
             "lambda_mse": 0.05,
@@ -194,7 +196,6 @@ def train():
         fuse_mode=config.fuse_mode,
         hidden_dim=config.hidden_dim,
         subject_count=4,
-        max_len=600,
     )
     model.to(config.device)
     log_model_params(model)
@@ -284,7 +285,6 @@ def train():
         fuse_mode=config.fuse_mode,
         hidden_dim=config.hidden_dim,
         subject_count=4,
-        max_len=600,
     )
     model.to(config.device)
     load_initial_state(model)

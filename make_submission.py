@@ -109,7 +109,8 @@ feature_paths = {
     "thinker_12": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_12", #torch.Size([1, 984, 2048])
     "thinker_24": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_24", #torch.Size([1, 984, 2048])
     "thinker_36": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_36", #torch.Size([1, 984, 2048])
-    "visual_cnn": "Features/Visual/SlowR50"
+    "visual_cnn": "Features/Visual/SlowR50",
+    "text": "Features/Text/Qwen3B_tr1.49_len60_before50"
 }
 
 input_dims = {
@@ -123,11 +124,12 @@ input_dims = {
     "thinker_12": 2048 * 2,
     "thinker_24": 2048 * 2,
     "thinker_36": 2048 * 2,
-    "visual_cnn": 8192
+    "visual_cnn": 8192,
+    "text": 2048
 }
 
 model = FMRIModel(
-    input_dims, 1000, hidden_dim=160, fuse_mode="concat", subject_count=4, max_len=500
+    input_dims, 1000, hidden_dim=256, fuse_mode="concat", subject_count=4,
 )
 
 model.load_state_dict(torch.load("final_model.pt"))

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from RoPE import PredictionTransformerRoPE
 
 class ModalityFusionTransformer(nn.Module):
     def __init__(
@@ -11,7 +12,7 @@ class ModalityFusionTransformer(nn.Module):
         num_layers=1,
         num_heads=4,
         dropout_rate=0.3,
-        subject_dropout_prob=0.2,
+        subject_dropout_prob=0.0,
         fuse_mode: str = "concat",
         use_transformer: bool = True
     ):
@@ -163,7 +164,6 @@ class FMRIModel(nn.Module):
         output_dim,
         subject_count=4,
         hidden_dim=256,
-        max_len=500,
         mask_prob=0.2,
         fuse_mode="concat",
         use_hrf_conv=False
@@ -179,7 +179,7 @@ class FMRIModel(nn.Module):
             else hidden_dim
         )
 
-        self.predictor = PredictionLSTM(
+        self.predictor = PredictionTransformerRoPE(
             input_dim=fused_dim,
             output_dim=output_dim,
         )

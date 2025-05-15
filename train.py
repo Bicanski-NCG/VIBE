@@ -15,21 +15,31 @@ from losses import (
 from torch import nn
 
 feature_paths = {
-    "audio": "Features/Audio",
-    "video_high_level": "Features/Visual/InternVideo/features_chunk1.49_len2_before2_frames120_imgsize224_idx-1.0",
-    "video_mid_high_level": "Features/Visual/InternVideo/features_chunk1.49_len2_before2_frames120_imgsize224_idx-10.0",
-    "video_mid_low_level": "Features/Visual/InternVideo/features_chunk1.49_len2_before2_frames120_imgsize224_idx-20.0",
-    "video_low_level": "Features/Visual/SlowR50",
-    "text": "Features/Text"
+    "aud_last": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/aud_last", #torch.Size([102, 1280])
+    "aud_ln_post": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/audio_ln_post", #torch.Size([102, 1280])
+    "conv3d_features": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/conv3d_features", #torch.Size([3536, 1280])
+    "vis_block5": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_block5", #torch.Size([3536, 1280])
+    "vis_block8": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_block8", #torch.Size([3536, 1280])
+    "vis_block12": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_block12", #torch.Size([3536, 1280])
+    "vis_merged": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_merged", #torch.Size([884, 2048])
+    "thinker_12": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_12", #torch.Size([1, 984, 2048])
+    "thinker_24": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_24", #torch.Size([1, 984, 2048])
+    "thinker_36": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_36", #torch.Size([1, 984, 2048])
+    "visual_cnn": "Features/Visual/SlowR50"
 }
 
 input_dims = {
-    "audio": 2048,
-    "video_high_level": 1408,
-    "video_mid_high_level": 1408,
-    "video_mid_low_level": 1408,
-    "video_low_level": 8192,
-    "text": 2048
+    "aud_last": 1280 * 2,
+    "aud_ln_post": 1280 * 2,
+    "conv3d_features": 1280 * 2,
+    "vis_block5": 1280 * 2,
+    "vis_block8": 1280 * 2,
+    "vis_block12": 1280 * 2,
+    "vis_merged": 2048 * 2,
+    "thinker_12": 2048 * 2,
+    "thinker_24": 2048 * 2,
+    "thinker_36": 2048 * 2,
+    "visual_cnn": 8192
 }
 
 modality_keys = list(input_dims.keys())
@@ -146,7 +156,7 @@ def train():
             "early_stop_patience": 2,
             "lambda_sample": 0.001,
             "lambda_roi": 0.001,
-            "lambda_mse": 0.01,
+            "lambda_mse": 0.05,
             "fuse_mode": "concat",
             "hidden_dim": 256,
         },

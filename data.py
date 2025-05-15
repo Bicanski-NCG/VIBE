@@ -15,12 +15,10 @@ class FMRI_Dataset(Dataset):
         noise_std=0.0,
         normalization_stats=None,
         oversample_factor=1,
+        samples=None,
     ):
         super().__init__()
         self.root_folder = root_folder_fmri
-        self.fmri_files = sorted(
-            glob.glob(os.path.join(root_folder_fmri, "sub-0?", "func", "*.h5"))
-        )
 
         self.feature_paths = feature_paths  # Dict of {modality: path}
 
@@ -30,30 +28,37 @@ class FMRI_Dataset(Dataset):
 
         self.subject_name_id_dict = {"sub-01": 0, "sub-02": 1, "sub-03": 2, "sub-05": 3}
 
-        self.samples = []
-        for fmri_file in self.fmri_files:
-            subject_id = os.path.basename(os.path.dirname(os.path.dirname(fmri_file)))
-            with h5py.File(fmri_file, "r") as h5file:
-                for dataset_name in h5file.keys():
-                    num_samples = h5file[dataset_name].shape[0]
-                    sample = {
-                        "subject_id": subject_id,
-                        "fmri_file": fmri_file,
-                        "dataset_name": dataset_name,
-                        "num_samples": num_samples,
-                    }
-                    self.samples.append(sample)
+        if samples is not None:
+            self.samples = samples
+        else:
+            self.fmri_files = sorted(
+                glob.glob(os.path.join(root_folder_fmri, "sub-0?", "func", "*.h5"))            )
+            self.samples = []
+            for fmri_file in self.fmri_files:
+                subject_id = os.path.basename(
+                    os.path.dirname(os.path.dirname(fmri_file))
+                )
+                with h5py.File(fmri_file, "r") as h5file:
+                    for dataset_name in h5file.keys():
+                        num_samples = h5file[dataset_name].shape[0]
+                        sample = {
+                            "subject_id": subject_id,
+                            "fmri_file": fmri_file,
+                            "dataset_name": dataset_name,
+                            "num_samples": num_samples,
+                        }
+                        self.samples.append(sample)
 
-                    if is_movie_sample(fmri_file):
-                        for _ in range(self.oversample_factor - 1):  # 1 already added
-                            self.samples.append(sample.copy())
+                        if is_movie_sample(fmri_file):
+                            for _ in range(self.oversample_factor - 1):
+                                self.samples.append(sample.copy())
 
     def __len__(self):
         return len(self.samples)
 
     def find_feature_file(self, feature_root, file_name):
         matches = glob.glob(
-            os.path.join(feature_root, "**", f"*{file_name}"), recursive=True
+            os.path.join(feature_root, "**", f"*{file_name}.*"), recursive=True
         )
         if not matches:
             raise FileNotFoundError(
@@ -70,7 +75,9 @@ class FMRI_Dataset(Dataset):
         fmri_file = sample_info["fmri_file"]
         dataset_name = sample_info["dataset_name"]
 
-        file_name_features = f"{dataset_name.split('-')[-1]}.npy"
+        file_name_features = (
+            f"{dataset_name.split('-')[-1]}"
+        )
 
         with h5py.File(fmri_file, "r") as h5file:
             fmri_response = h5file[dataset_name][:]
@@ -82,7 +89,14 @@ class FMRI_Dataset(Dataset):
 
         for modality, root_path in self.feature_paths.items():
             path = self.find_feature_file(root_path, file_name_features)
-            data = torch.tensor(np.load(path), dtype=torch.float32).squeeze()
+            if path.endswith(".npy"):
+                data = torch.tensor(np.load(path), dtype=torch.float32).squeeze()
+            elif path.endswith(".pt"):
+                data = torch.load(path, map_location="cpu").squeeze().float()
+            else:
+                raise ValueError(
+                    f"Unknown feature file extension: {path}"
+                )
 
             if (
                 self.normalization_stats
@@ -121,7 +135,7 @@ def compute_mean_std(dataset):
     return stats
 
 
-def split_dataset_by_season(dataset, val_season="6", train_noise_std=0.01):
+def split_dataset_by_season(dataset, val_season="6", train_noise_std=0.00):
     train_samples, val_samples = [], []
 
     for sample in dataset.samples:
@@ -134,15 +148,15 @@ def split_dataset_by_season(dataset, val_season="6", train_noise_std=0.01):
         dataset.root_folder,
         dataset.feature_paths,
         noise_std=train_noise_std,
+        samples=train_samples,
     )
-    train_ds.samples = train_samples
 
     val_ds = FMRI_Dataset(
         dataset.root_folder,
         dataset.feature_paths,
         noise_std=0.0,
+        samples=val_samples,
     )
-    val_ds.samples = val_samples
 
     return train_ds, val_ds
 

@@ -19,7 +19,11 @@ class ModalityFusionTransformer(nn.Module):
         self.fuse_mode = fuse_mode
         self.projections = nn.ModuleDict(
             {
-                modality: nn.Linear(dim, hidden_dim)
+                modality: nn.Sequential(
+                    nn.Linear(dim, (hidden_dim + dim)  // 2),
+                    nn.LeakyReLU(),
+                    nn.Linear((hidden_dim + dim)  // 2, hidden_dim),
+                )
                 for modality, dim in input_dims.items()
             }
         )
@@ -125,7 +129,7 @@ class PredictionTransformer(nn.Module):
 class PredictionLSTM(nn.Module):
     def __init__(self, input_dim, output_dim=1000, num_layers=2, dropout=0.3):
         super().__init__()
-        hidden_dim = input_dim*4
+        hidden_dim = input_dim*2
         self.lstm = nn.LSTM(
             input_dim,
             hidden_dim,

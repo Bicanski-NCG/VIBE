@@ -85,8 +85,8 @@ class PredictionTransformerRoPE(nn.Module):
     def __init__(self,
                  input_dim=256,
                  output_dim=1000,
-                 num_layers=2,
-                 num_heads=16,
+                 num_layers=1,
+                 num_heads=8,
                  dropout=0.3):
         super().__init__()
         # ← no absolute/learned positional encodings needed

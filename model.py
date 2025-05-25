@@ -182,6 +182,9 @@ class FMRIModel(nn.Module):
         self.predictor = PredictionTransformerRoPE(
             input_dim=fused_dim,
             output_dim=output_dim,
+            num_layers=1,
+            num_heads=8,
+            dropout=0.3
         )
 
         self.use_hrf_conv = use_hrf_conv

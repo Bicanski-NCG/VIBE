@@ -25,8 +25,14 @@ feature_paths = {
     "thinker_12": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_12", #torch.Size([1, 984, 2048])
     "thinker_24": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_24", #torch.Size([1, 984, 2048])
     "thinker_36": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_36", #torch.Size([1, 984, 2048])
-    "visual_cnn": "Features/Visual/SlowR50",
-    "text": "Features/Text/Qwen3B_tr1.49_len60_before50"
+    "text": "Features/Text/Qwen3B_tr1.49_len60_before50",
+    "fast_res3_act": "Features/Visual/SlowFast_R101_tr1.49/fast_res3_act",
+    "fast_stem_act": "Features/Visual/SlowFast_R101_tr1.49/fast_stem_act",
+    "pool_concat": "Features/Visual/SlowFast_R101_tr1.49/pool_concat",
+    "slow_res3_act": "Features/Visual/SlowFast_R101_tr1.49/slow_res3_act",
+    "slow_res5_act": "Features/Visual/SlowFast_R101_tr1.49/slow_res5_act",
+    "slow_stem_act": "Features/Visual/SlowFast_R101_tr1.49/slow_stem_act",
+    "audio_long_contrext": "Features/Audio/Wave2Vec2/features_chunk1.49_len60_before50",
 }
 
 input_dims = {
@@ -40,8 +46,14 @@ input_dims = {
     "thinker_12": 2048 * 2,
     "thinker_24": 2048 * 2,
     "thinker_36": 2048 * 2,
-    "visual_cnn": 8192,
-    "text": 2048
+    "text": 2048,
+    "fast_res3_act": 2048,
+    "fast_stem_act": 1024,
+    "pool_concat": 9216,
+    "slow_res3_act": 4096,
+    "slow_res5_act": 4096,
+    "slow_stem_act": 8192,
+    "audio_long_contrext": 2048,
 }
 
 modality_keys = list(input_dims.keys())
@@ -151,13 +163,13 @@ def train():
         project="fmri-model",
         config={
             "epochs": 150,
-            "batch_size": 4,
+            "batch_size": 8,
             "lr": 1e-4,
             "weight_decay": 1e-4,
-            "device": "cuda:1",
+            "device": "cuda:3",
             "early_stop_patience": 1,
-            "lambda_sample": 0.001,
-            "lambda_roi": 0.001,
+            "lambda_sample": 0,
+            "lambda_roi": 0,
             "lambda_mse": 0.05,
             "fuse_mode": "concat",
             "hidden_dim": 256,

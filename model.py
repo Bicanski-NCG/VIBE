@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -14,20 +15,15 @@ class ModalityFusionTransformer(nn.Module):
         dropout_rate=0.3,
         subject_dropout_prob=0.0,
         fuse_mode: str = "concat",
-        use_transformer: bool = True
+        use_transformer: bool = True,
+        num_layers_projection: int = 1
     ):
         super().__init__()
         self.fuse_mode = fuse_mode
-        self.projections = nn.ModuleDict(
-            {
-                modality: nn.Sequential(
-                    nn.Linear(dim, (hidden_dim + dim)  // 2),
-                    nn.LeakyReLU(),
-                    nn.Linear((hidden_dim + dim)  // 2, hidden_dim),
-                )
-                for modality, dim in input_dims.items()
-            }
-        )
+        self.projections = nn.ModuleDict({
+            modality: self.build_projection(dim, hidden_dim, num_layers_projection)
+            for modality, dim in input_dims.items()
+        })
 
         self.subject_dropout_prob = subject_dropout_prob
         self.subject_embeddings = nn.Embedding(subject_count + 1, hidden_dim)
@@ -45,6 +41,17 @@ class ModalityFusionTransformer(nn.Module):
             self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
         else: 
             self.transformer = nn.Identity()
+
+    def build_projection(self, input_dim, output_dim, num_layers):
+        layers = []
+        dims = np.linspace(input_dim, output_dim, num_layers + 1, dtype=int)
+
+        for i in range(num_layers):
+            layers.append(nn.Linear(dims[i], dims[i + 1]))
+            if i < num_layers - 1:
+                layers.append(nn.LeakyReLU())
+
+        return nn.Sequential(*layers)
 
     def forward(self, inputs: dict, subject_ids):
         B, T, _ = next(iter(inputs.values())).shape

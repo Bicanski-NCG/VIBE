@@ -217,15 +217,16 @@ def process_mono_stereo_folder(input_folder, output_folder,
         for file in files:
             if file.endswith(".mkv"):
                 video_files.append((root, file))
-    print(video_files)
     for root, file in tqdm(video_files, desc="Processing videos"):
         relative_path = os.path.relpath(root, input_folder)
         save_path = os.path.join(output_folder, relative_path)
         os.makedirs(save_path, exist_ok=True)
+        os.makedirs(os.path.join(save_path,'mono'), exist_ok=True)
+        os.makedirs(os.path.join(save_path,'stereo'), exist_ok=True)
 
         video_path = os.path.join(root, file)
-        output_paths = [os.path.join(save_path, file.replace(".mkv", "_mono.npy")),
-                        os.path.join(save_path, file.replace(".mkv", "_stereo.npy"))]
+        output_paths = [os.path.join(save_path,'mono', file.replace(".mkv", ".npy")),
+                        os.path.join(save_path,'stereo', file.replace(".mkv", ".npy"))]
 
         if (not os.path.isfile(output_paths[0]) and not os.path.isfile(output_paths[1])):
             extract_audio_features(video_path, output_paths, chunk_interval, chunk_length, seconds_before_chunk, n_mfcc,

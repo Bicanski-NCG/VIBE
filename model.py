@@ -1,6 +1,8 @@
+import numpy as np
 import torch
 import torch.nn as nn
-
+import torch.nn.functional as F
+from RoPE import PredictionTransformerRoPE
 
 class ModalityFusionTransformer(nn.Module):
     def __init__(
@@ -9,34 +11,47 @@ class ModalityFusionTransformer(nn.Module):
         subject_count=4,
         hidden_dim=1024,
         num_layers=1,
-        num_heads=8,
+        num_heads=4,
         dropout_rate=0.3,
-        subject_dropout_prob=0.2,
+        subject_dropout_prob=0.0,
         fuse_mode: str = "concat",
+        use_transformer: bool = True,
+        num_layers_projection: int = 1
     ):
         super().__init__()
         self.fuse_mode = fuse_mode
-        self.projections = nn.ModuleDict(
-            {
-                modality: nn.Linear(dim, hidden_dim)
-                for modality, dim in input_dims.items()
-            }
-        )
+        self.projections = nn.ModuleDict({
+            modality: self.build_projection(dim, hidden_dim, num_layers_projection)
+            for modality, dim in input_dims.items()
+        })
 
         self.subject_dropout_prob = subject_dropout_prob
         self.subject_embeddings = nn.Embedding(subject_count + 1, hidden_dim)
         self.null_subject_index = subject_count
 
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=hidden_dim,
-            nhead=num_heads,
-            dim_feedforward=hidden_dim * 4,
-            batch_first=True,
-            norm_first=True,
-            activation="gelu",
-            dropout=dropout_rate,
-        )
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        if use_transformer:
+            encoder_layer = nn.TransformerEncoderLayer(
+                d_model=hidden_dim,
+                nhead=num_heads,
+                dim_feedforward=hidden_dim * 4,
+                batch_first=True,
+                activation="gelu",
+                dropout=dropout_rate,
+            )
+            self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        else: 
+            self.transformer = nn.Identity()
+
+    def build_projection(self, input_dim, output_dim, num_layers):
+        layers = []
+        dims = np.linspace(input_dim, output_dim, num_layers + 1, dtype=int)
+
+        for i in range(num_layers):
+            layers.append(nn.Linear(dims[i], dims[i + 1]))
+            if i < num_layers - 1:
+                layers.append(nn.LeakyReLU())
+
+        return nn.Sequential(*layers)
 
     def forward(self, inputs: dict, subject_ids):
         B, T, _ = next(iter(inputs.values())).shape
@@ -89,26 +104,25 @@ class FixedPositionalEncoding(nn.Module):
 class PredictionTransformer(nn.Module):
     def __init__(
         self,
-        hidden_dim=256,
+        input_dim=256,
         output_dim=1000,
         num_layers=2,
-        num_heads=8,
-        max_len=600,
+        num_heads=16,
+        max_len=500,
         dropout=0.3,
     ):
         super().__init__()
-        self.pos_encoder = FixedPositionalEncoding(hidden_dim, max_len)
+        self.pos_encoder = FixedPositionalEncoding(input_dim, max_len)
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=hidden_dim,
+            d_model=input_dim,
             nhead=num_heads,
             dropout=dropout,
-            dim_feedforward=hidden_dim * 4,
+            dim_feedforward=input_dim * 4,
             batch_first=True,
-            norm_first=True,
             activation="gelu",
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-        self.output_head = nn.Linear(hidden_dim, output_dim)
+        self.output_head = nn.Linear(input_dim, output_dim)
 
     def forward(self, x, attn_mask):
         x = self.pos_encoder(x)
@@ -120,6 +134,35 @@ class PredictionTransformer(nn.Module):
         x = self.transformer(x, mask=causal_mask, src_key_padding_mask=~attn_mask)
         return self.output_head(x)
 
+class PredictionLSTM(nn.Module):
+    def __init__(self, input_dim, output_dim=1000, num_layers=2, dropout=0.3):
+        super().__init__()
+        hidden_dim = input_dim*2
+        self.lstm = nn.LSTM(
+            input_dim,
+            hidden_dim,
+            num_layers=num_layers,
+            dropout=dropout if num_layers > 1 else 0,
+            batch_first=True,
+            bidirectional=False,
+        )
+        self.output_head = nn.Linear(hidden_dim, output_dim)
+
+    def forward(self, x, attn_mask):
+        # Pack the sequence to handle variable-length sequences
+        lengths = attn_mask.sum(dim=1)
+        packed = nn.utils.rnn.pack_padded_sequence(x, lengths.cpu(), batch_first=True, enforce_sorted=False)
+
+        packed_output, _ = self.lstm(packed)
+
+        output, _ = nn.utils.rnn.pad_packed_sequence(
+            packed_output,
+            batch_first=True,
+            total_length=attn_mask.size(1)  # <<< Fix
+        )
+        return self.output_head(output)
+
+
 
 class FMRIModel(nn.Module):
     def __init__(
@@ -128,23 +171,42 @@ class FMRIModel(nn.Module):
         output_dim,
         subject_count=4,
         hidden_dim=256,
-        max_len=500,
         mask_prob=0.2,
         fuse_mode="concat",
+        use_hrf_conv=False
     ):
         super().__init__()
         self.encoder = ModalityFusionTransformer(
             input_dims, subject_count, hidden_dim=hidden_dim, fuse_mode=fuse_mode
         )
-        self.predictor = PredictionTransformer(
-            hidden_dim=(
-                hidden_dim * (len(input_dims) + 1)
-                if fuse_mode == "concat"
-                else hidden_dim
-            ),
-            output_dim=output_dim,
-            max_len=max_len,
+
+        fused_dim = (
+            hidden_dim * (len(input_dims) + 1)
+            if fuse_mode == "concat"
+            else hidden_dim
         )
+
+        self.predictor = PredictionTransformerRoPE(
+            input_dim=fused_dim,
+            output_dim=output_dim,
+            num_layers=1,
+            num_heads=8,
+            dropout=0.3
+        )
+
+        self.use_hrf_conv = use_hrf_conv
+
+        if use_hrf_conv:
+            self.hrf_conv = nn.Conv1d(
+                in_channels=output_dim,
+                out_channels=output_dim,
+                kernel_size=5,
+                padding=0,
+                groups=output_dim,
+            )
+        else:
+            self.hrf_conv = nn.Identity()
+
         self.mask_prob = mask_prob
 
     def forward(self, features, subject_ids, attention_mask):
@@ -157,4 +219,12 @@ class FMRIModel(nn.Module):
             attention_mask[mask] = False
 
         fused = self.encoder(features, subject_ids)
-        return self.predictor(fused, attention_mask)
+        preds = self.predictor(fused, attention_mask)
+
+        if self.use_hrf_conv:
+            preds = preds.transpose(1, 2)
+            preds = F.pad(preds, (4, 0))
+            preds = self.hrf_conv(preds)
+            preds = preds.transpose(1, 2)
+
+        return preds

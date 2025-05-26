@@ -9,6 +9,7 @@ dependencies = [
     "fastprogress>=1.0.3",
     "h5py>=3.13.0",
     "ipykernel>=6.29.5",
+    "labml-nn>=0.4.137",
     "matplotlib>=3.10.1",
     "nilearn>=0.10.4",
     "numpy==1.23.5",

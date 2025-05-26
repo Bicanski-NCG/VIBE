@@ -22,7 +22,7 @@ def pad_to_length(x, target_len):
 
 def load_features_for_episode(episode_id, feature_paths, normalization_stats=None):
     def find_feature_file(root, name):
-        matches = glob.glob(os.path.join(root, "**", f"*{name}.npy"), recursive=True)
+        matches = glob.glob(os.path.join(root, "**", f"*{name}.*"), recursive=True)
         if not matches:
             raise FileNotFoundError(f"{name}.npy not found in {root}")
         return matches[0]
@@ -30,7 +30,12 @@ def load_features_for_episode(episode_id, feature_paths, normalization_stats=Non
     features = {}
     for modality, root in feature_paths.items():
         path = find_feature_file(root, episode_id)
-        feat = torch.tensor(np.load(path), dtype=torch.float32).squeeze()
+        if path.endswith(".npy"):
+            feat = torch.tensor(np.load(path), dtype=torch.float32).squeeze()
+        elif path.endswith(".pt"):
+            feat = torch.load(path, map_location="cpu").squeeze().float()
+        else:
+            raise ValueError(f"Unknown feature file extension: {path}")
         if normalization_stats and f"{modality}_mean" in normalization_stats:
             feat = normalize_feature(
                 feat,
@@ -93,31 +98,62 @@ def predict_fmri_for_test_set(
     return output_dict
 
 
-input_dims = {
-    "audio": 2048,
-    "video_low_level": 8192,
-    "video_high_level": 512,
-    "text": 2048,
+
+feature_paths = {
+    "aud_last": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/aud_last", #torch.Size([102, 1280])
+    "aud_ln_post": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/audio_ln_post", #torch.Size([102, 1280])
+    "conv3d_features": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/conv3d_features", #torch.Size([3536, 1280])
+    "vis_block5": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_block5", #torch.Size([3536, 1280])
+    "vis_block8": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_block8", #torch.Size([3536, 1280])
+    "vis_block12": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_block12", #torch.Size([3536, 1280])
+    "vis_merged": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_merged", #torch.Size([884, 2048])
+    "thinker_12": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_12", #torch.Size([1, 984, 2048])
+    "thinker_24": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_24", #torch.Size([1, 984, 2048])
+    "thinker_36": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_36", #torch.Size([1, 984, 2048])
+    "text": "Features/Text/Qwen3B_tr1.49_len60_before50",
+    "fast_res3_act": "Features/Visual/SlowFast_R101_tr1.49/fast_res3_act",
+    "fast_stem_act": "Features/Visual/SlowFast_R101_tr1.49/fast_stem_act",
+    "pool_concat": "Features/Visual/SlowFast_R101_tr1.49/pool_concat",
+    "slow_res3_act": "Features/Visual/SlowFast_R101_tr1.49/slow_res3_act",
+    "slow_res5_act": "Features/Visual/SlowFast_R101_tr1.49/slow_res5_act",
+    "slow_stem_act": "Features/Visual/SlowFast_R101_tr1.49/slow_stem_act",
+    "audio_long_contrext": "Features/Audio/Wave2Vec2/features_chunk1.49_len60_before50",
 }
+
+input_dims = {
+    "aud_last": 1280 * 2,
+    "aud_ln_post": 1280 * 2,
+    "conv3d_features": 1280 * 2,
+    "vis_block5": 1280 * 2,
+    "vis_block8": 1280 * 2,
+    "vis_block12": 1280 * 2,
+    "vis_merged": 2048 * 2,
+    "thinker_12": 2048 * 2,
+    "thinker_24": 2048 * 2,
+    "thinker_36": 2048 * 2,
+    "text": 2048,
+    "fast_res3_act": 2048,
+    "fast_stem_act": 1024,
+    "pool_concat": 9216,
+    "slow_res3_act": 4096,
+    "slow_res5_act": 4096,
+    "slow_stem_act": 8192,
+    "audio_long_contrext": 2048,
+}
+
 model = FMRIModel(
-    input_dims, 1000, hidden_dim=256, fuse_mode="concat", subject_count=4, max_len=600
+    input_dims, 1000, hidden_dim=256, fuse_mode="concat", subject_count=4,
 )
 
 model.load_state_dict(torch.load("final_model.pt"))
 model.eval()
 
-feature_paths = {
-    "audio": "Features/Audio",
-    "video_low_level": "Features/Visual/SlowR50",
-    "video_high_level": "Features/Visual/InternVideo/features_chunk1.49_len60_before50_frames120_imgsize224",
-    "text": "Features/Text",
-}
 predictions = predict_fmri_for_test_set(
     model=model,
     feature_paths=feature_paths,
     sample_counts_root="fmri",
     normalization_stats=None,
-    device="cuda:1",
+    device="cuda:3",
 )
 
 output_file = "fmri_predictions_friends_s7.npy"

@@ -11,23 +11,49 @@ from losses import (
     masked_negative_pearson_loss,
     sample_similarity_loss,
     roi_similarity_loss,
-    spatial_regularizer_loss
 )
-from adjaceny_matrices import get_laplacians
 from torch import nn
 
 feature_paths = {
-    "audio": "Features/Audio",
-    "video_low_level": "Features/Visual/SlowR50",
-    "video_high_level": "Features/Visual/InternVideo/features_chunk1.49_len6_before6_frames120_imgsize224",
-    "text": "Features/Text"
+    "aud_last": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/aud_last", #torch.Size([102, 1280])
+    "aud_ln_post": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/audio_ln_post", #torch.Size([102, 1280])
+    "conv3d_features": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/conv3d_features", #torch.Size([3536, 1280])
+    "vis_block5": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_block5", #torch.Size([3536, 1280])
+    "vis_block8": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_block8", #torch.Size([3536, 1280])
+    "vis_block12": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_block12", #torch.Size([3536, 1280])
+    "vis_merged": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_merged", #torch.Size([884, 2048])
+    "thinker_12": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_12", #torch.Size([1, 984, 2048])
+    "thinker_24": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_24", #torch.Size([1, 984, 2048])
+    "thinker_36": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_36", #torch.Size([1, 984, 2048])
+    "text": "Features/Text/Qwen3B_tr1.49_len60_before50",
+    "fast_res3_act": "Features/Visual/SlowFast_R101_tr1.49/fast_res3_act",
+    "fast_stem_act": "Features/Visual/SlowFast_R101_tr1.49/fast_stem_act",
+    "pool_concat": "Features/Visual/SlowFast_R101_tr1.49/pool_concat",
+    "slow_res3_act": "Features/Visual/SlowFast_R101_tr1.49/slow_res3_act",
+    "slow_res5_act": "Features/Visual/SlowFast_R101_tr1.49/slow_res5_act",
+    "slow_stem_act": "Features/Visual/SlowFast_R101_tr1.49/slow_stem_act",
+    "audio_long_contrext": "Features/Audio/Wave2Vec2/features_chunk1.49_len60_before50",
 }
 
 input_dims = {
-    "audio": 2048,
-    "video_low_level": 8192,
-    "video_high_level": 512,
-    "text": 2048
+    "aud_last": 1280 * 2,
+    "aud_ln_post": 1280 * 2,
+    "conv3d_features": 1280 * 2,
+    "vis_block5": 1280 * 2,
+    "vis_block8": 1280 * 2,
+    "vis_block12": 1280 * 2,
+    "vis_merged": 2048 * 2,
+    "thinker_12": 2048 * 2,
+    "thinker_24": 2048 * 2,
+    "thinker_36": 2048 * 2,
+    "text": 2048,
+    "fast_res3_act": 2048,
+    "fast_stem_act": 1024,
+    "pool_concat": 9216,
+    "slow_res3_act": 4096,
+    "slow_res5_act": 4096,
+    "slow_stem_act": 8192,
+    "audio_long_contrext": 2048,
 }
 
 modality_keys = list(input_dims.keys())
@@ -61,19 +87,11 @@ def run_epoch(
     lambda_sample=1.0,
     lambda_roi=1.0,
     lambda_mse=1.0,
-    lambda_sp_adj = 0.1,
-    lambda_net_adj = 0.1,
-    spatial_laplacian = None,
-    network_laplacian = None
-    #TODO: I added these dummy defaults because I think one should have a default option where no laplacians are provided and the loss is ignored but I was too lazy to implement this now
 ):
     epoch_negative_corr_loss = 0.0
     epoch_sample_loss = 0.0
     epoch_roi_loss = 0.0
     epoch_mse_loss = 0.0
-    epoch_sp_adj_loss = 0.0
-    epoch_net_adj_loss = 0.0
-
     model.train() if is_train else model.eval()
 
     for batch in loader:
@@ -90,17 +108,12 @@ def run_epoch(
             negative_corr_loss = masked_negative_pearson_loss(pred, fmri, attn_mask)
             sample_loss = sample_similarity_loss(pred, fmri, attn_mask)
             roi_loss = roi_similarity_loss(pred, fmri, attn_mask)
-            spatial_adjacency_loss = spatial_regularizer_loss(pred,spatial_laplacian)
-            network_ajacency_loss = spatial_regularizer_loss(pred,network_laplacian)
-
             mse_loss = nn.functional.mse_loss(pred, fmri)
             loss = (
                 negative_corr_loss
                 + lambda_sample * sample_loss
                 + lambda_roi * roi_loss
                 + lambda_mse * mse_loss
-                + lambda_sp_adj * spatial_adjacency_loss
-                + lambda_net_adj * network_ajacency_loss
             )
 
             if is_train:
@@ -114,8 +127,6 @@ def run_epoch(
                             "train_sample_loss": sample_loss.item(),
                             "train_roi_loss": roi_loss.item(),
                             "train_mse_loss": mse_loss.item(),
-                            "train_spatial_adjacency_loss": spatial_adjacency_loss.item(),
-                            "train_network_adjacency_loss":network_ajacency_loss.item()
                         },
                         step=global_step,
                     )
@@ -125,23 +136,17 @@ def run_epoch(
         epoch_sample_loss += sample_loss.item()
         epoch_roi_loss += roi_loss.item()
         epoch_mse_loss += mse_loss.item()
-        epoch_sp_adj_loss += spatial_adjacency_loss.item()
-        epoch_net_adj_loss+= network_ajacency_loss.item()
 
     epoch_negative_corr_loss /= len(loader)
     epoch_sample_loss /= len(loader)
     epoch_roi_loss /= len(loader)
     epoch_mse_loss /= len(loader)
-    epoch_sp_adj_loss/=len(loader)
-    epoch_net_adj_loss/=len(loader)
 
     epoch_loss = (
         epoch_negative_corr_loss
         + lambda_sample * epoch_sample_loss
         + lambda_roi * epoch_roi_loss
         + lambda_mse * epoch_mse_loss
-        + lambda_sp_adj * epoch_sp_adj_loss
-        + lambda_net_adj * epoch_net_adj_loss
     )
     return (
         epoch_loss,
@@ -149,8 +154,6 @@ def run_epoch(
         epoch_sample_loss,
         epoch_roi_loss,
         epoch_mse_loss,
-        epoch_sp_adj_loss,
-        epoch_net_adj_loss
     ), global_step
 
 
@@ -163,14 +166,11 @@ def train():
             "batch_size": 4,
             "lr": 1e-4,
             "weight_decay": 1e-4,
-            "device": "cuda:1",
-            "early_stop_patience": 2,
-            "lambda_sample": 0.1,
-            "lambda_roi": 0.1,
-            "lambda_mse": 0.1,
-            "lambda_sp_adj":0.1,
-            "lambda_net_adj":0.1,
-            "spatial_laplacian_smoothing":0.2,
+            "device": "cuda:3",
+            "early_stop_patience": 1,
+            "lambda_sample": 0,
+            "lambda_roi": 0,
+            "lambda_mse": 0.05,
             "fuse_mode": "concat",
             "hidden_dim": 256,
         },
@@ -186,7 +186,6 @@ def train():
     train_ds, valid_ds = split_dataset_by_season(
         ds, val_season="6", train_noise_std=0.0
     )
-
     train_loader = DataLoader(
         train_ds,
         batch_size=config.batch_size,
@@ -209,7 +208,6 @@ def train():
         fuse_mode=config.fuse_mode,
         hidden_dim=config.hidden_dim,
         subject_count=4,
-        max_len=600,
     )
     model.to(config.device)
     log_model_params(model)
@@ -221,8 +219,6 @@ def train():
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=config.epochs
     )
-
-    spatial_laplacian,network_laplacian = get_laplacians(config.spatial_laplacian_smoothing)
 
     best_val_loss = float("inf")
     patience_counter = 0
@@ -240,11 +236,6 @@ def train():
             lambda_sample=config.lambda_sample,
             lambda_roi=config.lambda_roi,
             lambda_mse=config.lambda_mse,
-            lambda_sp_adj = config.lambda_sp_adj,
-            lambda_net_adj  = config.lambda_net_adj,spatial_laplacian=spatial_laplacian,network_laplacian=network_laplacian
-
-
-
         )
 
         val_loss_tuple, _ = run_epoch(
@@ -256,10 +247,6 @@ def train():
             lambda_sample=config.lambda_sample,
             lambda_roi=config.lambda_roi,
             lambda_mse=config.lambda_mse,
-            lambda_sp_adj = config.lambda_sp_adj,
-            lambda_net_adj  = config.lambda_net_adj,spatial_laplacian=spatial_laplacian,network_laplacian=network_laplacian
-
-
         )
 
         wandb.log(
@@ -274,12 +261,6 @@ def train():
                 "epoch_loss_valid_roi": val_loss_tuple[3],
                 "epoch_loss_train_mse": train_loss_tuple[4],
                 "epoch_loss_valid_mse": val_loss_tuple[4],
-                "epoch_loss_train_spatial_adjacency": train_loss_tuple[5],
-                "epoch_loss_valid_spatial_adjacency": val_loss_tuple[5],
-                 "epoch_loss_train_network_adjacency": train_loss_tuple[6],
-                "epoch_loss_valid_network_adjacency": val_loss_tuple[6],
-
-
             },
             step=global_step,
         )
@@ -316,7 +297,6 @@ def train():
         fuse_mode=config.fuse_mode,
         hidden_dim=config.hidden_dim,
         subject_count=4,
-        max_len=600,
     )
     model.to(config.device)
     load_initial_state(model)
@@ -344,9 +324,7 @@ def train():
             is_train=True,
             lambda_sample=config.lambda_sample,
             lambda_roi=config.lambda_roi,
-            lambda_mse=config.lambda_mse, 
-            lambda_sp_adj = config.lambda_sp_adj,
-            lambda_net_adj  = config.lambda_net_adj
+            lambda_mse=config.lambda_mse,
         )
 
         wandb.log(
@@ -356,9 +334,6 @@ def train():
                 "full_dataset_loss_sample": full_loss_tuple[2],
                 "full_dataset_loss_roi": full_loss_tuple[3],
                 "full_dataset_loss_mse": full_loss_tuple[4],
-                "full_dataset_loss_spatial_adjacency": full_loss_tuple[5],
-                "full_dataset_loss_network_adjacency": full_loss_tuple[6],
-
                 "retrain_epoch": epoch + 1,
             }
         )

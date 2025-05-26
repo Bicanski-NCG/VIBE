@@ -219,16 +219,17 @@ def process_mono_stereo_folder(input_folder, output_folder,
                 video_files.append((root, file))
     for root, file in tqdm(video_files, desc="Processing videos"):
         relative_path = os.path.relpath(root, input_folder)
-        save_path = os.path.join(output_folder, relative_path)
-        os.makedirs(save_path, exist_ok=True)
-        os.makedirs(os.path.join(save_path,'mono'), exist_ok=True)
-        os.makedirs(os.path.join(save_path,'stereo'), exist_ok=True)
+        save_path_mono = os.path.join(output_folder,'mono', relative_path)
+        save_path_stereo = os.path.join(output_folder,'stereo', relative_path)
+
+        os.makedirs(save_path_mono, exist_ok=True)
+        os.makedirs(save_path_stereo, exist_ok=True)
 
         video_path = os.path.join(root, file)
-        output_paths = [os.path.join(save_path,'mono', file.replace(".mkv", ".npy")),
-                        os.path.join(save_path,'stereo', file.replace(".mkv", ".npy"))]
+        output_paths = [os.path.join(save_path_mono, file.replace(".mkv", ".npy")),
+                        os.path.join(save_path_stereo, file.replace(".mkv", ".npy"))]
 
-        if (not os.path.isfile(output_paths[0]) and not os.path.isfile(output_paths[1])):
+        if (not os.path.isfile(output_paths[0]) or not os.path.isfile(output_paths[1])):
             extract_audio_features(video_path, output_paths, chunk_interval, chunk_length, seconds_before_chunk, n_mfcc,
                                    n_statistics)
 

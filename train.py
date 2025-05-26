@@ -33,6 +33,9 @@ feature_paths = {
     "slow_res5_act": "Features/Visual/SlowFast_R101_tr1.49/slow_res5_act",
     "slow_stem_act": "Features/Visual/SlowFast_R101_tr1.49/slow_stem_act",
     "audio_long_contrext": "Features/Audio/Wave2Vec2/features_chunk1.49_len60_before50",
+    "audio_mfcc_mono": "Features/Audio/LowLevel/_chunk1.49_len4.0_before2.0_nmfcc32_nstats4/mono/movies/",
+    "audio_mfcc_stereo": "Features/Audio/LowLevel/_chunk1.49_len4.0_before2.0_nmfcc32_nstats4/stereo/movies/",
+
 }
 
 input_dims = {
@@ -54,6 +57,9 @@ input_dims = {
     "slow_res5_act": 4096,
     "slow_stem_act": 8192,
     "audio_long_contrext": 2048,
+    "audio_mfcc_mono":int(4*32),
+    "audio_mfcc_stereo":int(4*32)
+
 }
 
 modality_keys = list(input_dims.keys())

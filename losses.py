@@ -76,3 +76,14 @@ def roi_similarity_loss(pred, target, mask=None, eps=1e-8):
     C_pred   = C_pred   - eye
     C_target = C_target - eye
     return F.mse_loss(C_pred, C_target)
+
+
+
+def spatial_regularizer_loss(pred,Laplacian):
+
+
+    energy = torch.einsum('...i,ij,...j',pred,Laplacian,pred)
+    
+    loss = energy.mean()
+    
+    return loss

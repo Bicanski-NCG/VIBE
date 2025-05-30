@@ -97,6 +97,101 @@ def predict_fmri_for_test_set(
 
     return output_dict
 
+def predict_fmri_for_season7(
+    model,
+    feature_paths,
+    sample_counts_root,
+    normalization_stats=None,
+    device="cuda",
+):
+    """
+    Predict fMRI responses for all season-7 episodes in one forward pass
+    per subject, returning the same nested dict structure that the
+    submission checker expects:
+
+        { "sub-01": { "s07e01a": np.array, ... }, ... }
+    """
+
+    model.eval()
+    model.to(device)
+
+    subjects           = ["sub-01", "sub-02", "sub-03", "sub-05"]
+    subject_name2idx   = {"sub-01": 0, "sub-02": 1, "sub-03": 2, "sub-05": 3}
+
+    output_dict = {}
+
+    for subj in subjects:
+        print(f"\n→  Processing {subj}")
+        output_dict[subj] = {}
+        subj_id_t = torch.tensor([subject_name2idx[subj]], device=device)
+
+        # ---------------------------------------------------------------------
+        # 1) Gather sample counts for every season-7 episode for this subject
+        # ---------------------------------------------------------------------
+        counts_path = os.path.join(
+            sample_counts_root,
+            subj,
+            "target_sample_number",
+            f"{subj}_friends-s7_fmri_samples.npy",
+        )
+        sample_counts = np.load(counts_path, allow_pickle=True).item()
+
+        # Sort keys to ensure chronological order: s07e01a, s07e01b, …
+        # A lexicographic sort is already correct for this naming scheme:
+        episodes = sorted(sample_counts.keys())
+
+        # ---------------------------------------------------------------------
+        # 2) Load & pad every modality for every episode, keep split indices
+        # ---------------------------------------------------------------------
+        concat_feats = {m: [] for m in feature_paths}   # lists of tensors
+        split_lengths = []                               # n_samples per episode
+
+        for epi_name in episodes:
+            n_samples = sample_counts[epi_name]
+
+            try:
+                features = load_features_for_episode(
+                    epi_name, feature_paths, normalization_stats
+                )
+            except FileNotFoundError as e:
+                print(f"  ⚠️  Skipping {epi_name}: {e}")
+                continue
+
+            for m in feature_paths:
+                # pad so every modality matches n_samples for this episode
+                x = pad_to_length(features[m], n_samples)[:n_samples]
+                concat_feats[m].append(x)
+
+            split_lengths.append(n_samples)
+
+        # If we skipped every episode, continue gracefully
+        if not split_lengths:
+            continue
+
+        # ---------------------------------------------------------------------
+        # 3) Concatenate over the *time* dimension -> shape [T_total, feat_dim]
+        # ---------------------------------------------------------------------
+        for m in concat_feats:
+            concat_feats[m] = torch.cat(concat_feats[m], dim=0).unsqueeze(0).to(device)
+
+        total_len = sum(split_lengths)
+
+        attention_mask = torch.ones((1, total_len), dtype=torch.bool, device=device)
+
+        # ---------------------------------------------------------------------
+        # 4) Forward pass & split prediction back into episodes
+        # ---------------------------------------------------------------------
+        with torch.no_grad():
+            preds = model(concat_feats, subj_id_t, attention_mask)      # [1,T,V]
+        preds = preds.squeeze(0).cpu().numpy().astype(np.float32)       # [T,V]
+
+        # Split along time-axis
+        start = 0
+        for epi_name, n in zip(episodes, split_lengths):
+            output_dict[subj][epi_name] = preds[start : start + n]
+            start += n
+
+    return output_dict
 
 
 feature_paths = {
@@ -118,28 +213,35 @@ feature_paths = {
     "slow_res5_act": "Features/Visual/SlowFast_R101_tr1.49/slow_res5_act",
     "slow_stem_act": "Features/Visual/SlowFast_R101_tr1.49/slow_stem_act",
     "audio_long_contrext": "Features/Audio/Wave2Vec2/features_chunk1.49_len60_before50",
+    # "audio_mfcc_mono": "Features/Audio/LowLevel/_chunk1.49_len4.0_before2.0_nmfcc32_nstats4/mono/movies/",
+    # "audio_mfcc_stereo": "Features/Audio/LowLevel/_chunk1.49_len4.0_before2.0_nmfcc32_nstats4/stereo/movies/",
+
 }
 
 input_dims = {
     "aud_last": 1280 * 2,
     "aud_ln_post": 1280 * 2,
-    "conv3d_features": 1280 * 2,
-    "vis_block5": 1280 * 2,
+    #"conv3d_features": 1280 * 2,
+    #"vis_block5": 1280 * 2,
     "vis_block8": 1280 * 2,
-    "vis_block12": 1280 * 2,
+    #"vis_block12": 1280 * 2,
     "vis_merged": 2048 * 2,
-    "thinker_12": 2048 * 2,
+    #"thinker_12": 2048 * 2,
     "thinker_24": 2048 * 2,
-    "thinker_36": 2048 * 2,
+    #"thinker_36": 2048 * 2,
     "text": 2048,
-    "fast_res3_act": 2048,
-    "fast_stem_act": 1024,
+    #"fast_res3_act": 2048,
+    #"fast_stem_act": 1024,
     "pool_concat": 9216,
     "slow_res3_act": 4096,
-    "slow_res5_act": 4096,
-    "slow_stem_act": 8192,
+    #"slow_res5_act": 4096,
+    #"slow_stem_act": 8192,
     "audio_long_contrext": 2048,
+    # "audio_mfcc_mono":int(4*32),
+    # "audio_mfcc_stereo":int(4*32)
+
 }
+
 
 model = FMRIModel(
     input_dims, 1000, hidden_dim=256, fuse_mode="concat", subject_count=4,
@@ -153,7 +255,7 @@ predictions = predict_fmri_for_test_set(
     feature_paths=feature_paths,
     sample_counts_root="fmri",
     normalization_stats=None,
-    device="cuda:3",
+    device="cuda:0",
 )
 
 output_file = "fmri_predictions_friends_s7.npy"

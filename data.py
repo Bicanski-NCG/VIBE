@@ -97,6 +97,9 @@ class FMRI_Dataset(Dataset):
                 raise ValueError(
                     f"Unknown feature file extension: {path}"
                 )
+            
+            if data.isnan().any():
+                data = torch.nan_to_num(data, nan=0.0)
 
             if (
                 self.normalization_stats

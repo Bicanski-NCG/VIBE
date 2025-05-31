@@ -6,12 +6,12 @@ train:
   lr: 0.0001
   weight_decay: 0.0001
   device: "cuda:0"
-  early_stop_patience: 2
+  early_stop_patience: 1
   lambda_sample: 0
   lambda_roi: 0
-  lambda_mse: 0.05
+  lambda_mse: 0.01
   lambda_hrf: 0.001
   fuse_mode: "concat"
   hidden_dim: 256
-  use_hrf_conv: true
-  learn_hrf: true
+  use_hrf_conv: false
+  learn_hrf: false

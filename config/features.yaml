@@ -23,21 +23,21 @@ features:
 input_dims:
   aud_last: 2560
   aud_ln_post: 2560
-  conv3d_features: 2560
-  vis_block5: 2560
+  #conv3d_features: 2560
+  #vis_block5: 2560
   vis_block8: 2560
-  vis_block12: 2560
+  #vis_block12: 2560
   vis_merged: 4096
-  thinker_12: 4096
+  #thinker_12: 4096
   thinker_24: 4096
-  thinker_36: 4096
+  #thinker_36: 4096
   text: 2048
-  fast_res3_act: 2048
-  fast_stem_act: 1024
+  #fast_res3_act: 2048
+  #fast_stem_act: 1024
   pool_concat: 9216
   slow_res3_act: 4096
-  slow_res5_act: 4096
-  slow_stem_act: 8192
+  #slow_res5_act: 4096
+  #slow_stem_act: 8192
   audio_long_context: 2048
 
 data_dir: "data/fmri"

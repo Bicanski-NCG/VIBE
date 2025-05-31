@@ -1,4 +1,7 @@
-import random, wandb, numpy as np, torch
+import random
+import wandb
+import numpy as np
+import torch
 
 def set_seed(seed: int = 42):
     random.seed(seed)

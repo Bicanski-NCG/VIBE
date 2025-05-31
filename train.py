@@ -24,7 +24,10 @@ def load_config():
     """Parse CLI arguments and load YAML configuration files."""
     parser = argparse.ArgumentParser(description="Training entrypoint")
     parser.add_argument(
-        "--seed", type=int, default=42, help="Random seed for reproducibility"
+        "--seed",
+        type=int,
+        default=None,
+        help="Random seed for reproducibility. If omitted, a random seed will be chosen.",
     )
     parser.add_argument(
         "--features",
@@ -42,8 +45,14 @@ def load_config():
     )
     args = parser.parse_args()
 
-    # Set random seeds for reproducibility
-    set_seed(args.seed)
+    # Determine final seed: use provided one or generate a new random seed
+    if args.seed is None:
+        chosen_seed = random.SystemRandom().randint(0, 2**32 - 1)
+        print(f"No --seed provided; using generated seed={chosen_seed}")
+    else:
+        chosen_seed = args.seed
+        print(f"Using user-provided seed={chosen_seed}")
+    set_seed(chosen_seed)
 
     # Load feature paths and input dimensions
     with open(args.features, "r") as f:
@@ -58,8 +67,8 @@ def load_config():
         params = yaml.safe_load(f)
         train_params = params["train"]
 
-    # Log the seed in the config for W&B metadata
-    train_params["seed"] = args.seed
+    # Log the chosen seed in the config for W&B metadata
+    train_params["seed"] = chosen_seed
 
     return features, input_dims, modality_keys, train_params, data_dir
 

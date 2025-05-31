@@ -1,10 +1,10 @@
-import torch
-from torch.utils.data import DataLoader
-import torch.optim as optim
-import wandb
-import random
+import argparse, yaml, random, wandb
+from pathlib import Path
 import numpy as np
-
+import torch
+from torch import nn
+import torch.optim as optim
+from torch.utils.data import DataLoader
 from data import FMRI_Dataset, split_dataset_by_season, collate_fn
 from model import FMRIModel
 from losses import (
@@ -12,66 +12,7 @@ from losses import (
     sample_similarity_loss,
     roi_similarity_loss,
 )
-from torch import nn
-
-feature_paths = {
-    "aud_last": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/aud_last", #torch.Size([102, 1280])
-    "aud_ln_post": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/audio_ln_post", #torch.Size([102, 1280])
-    "conv3d_features": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/conv3d_features", #torch.Size([3536, 1280])
-    "vis_block5": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_block5", #torch.Size([3536, 1280])
-    "vis_block8": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_block8", #torch.Size([3536, 1280])
-    "vis_block12": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_block12", #torch.Size([3536, 1280])
-    "vis_merged": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_merged", #torch.Size([884, 2048])
-    "thinker_12": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_12", #torch.Size([1, 984, 2048])
-    "thinker_24": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_24", #torch.Size([1, 984, 2048])
-    "thinker_36": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_36", #torch.Size([1, 984, 2048])
-    "text": "Features/Text/Qwen3B_tr1.49_len60_before50",
-    "fast_res3_act": "Features/Visual/SlowFast_R101_tr1.49/fast_res3_act",
-    "fast_stem_act": "Features/Visual/SlowFast_R101_tr1.49/fast_stem_act",
-    "pool_concat": "Features/Visual/SlowFast_R101_tr1.49/pool_concat",
-    "slow_res3_act": "Features/Visual/SlowFast_R101_tr1.49/slow_res3_act",
-    "slow_res5_act": "Features/Visual/SlowFast_R101_tr1.49/slow_res5_act",
-    "slow_stem_act": "Features/Visual/SlowFast_R101_tr1.49/slow_stem_act",
-    "audio_long_contrext": "Features/Audio/Wave2Vec2/features_chunk1.49_len60_before50",
-}
-
-input_dims = {
-    "aud_last": 1280 * 2,
-    "aud_ln_post": 1280 * 2,
-    "conv3d_features": 1280 * 2,
-    "vis_block5": 1280 * 2,
-    "vis_block8": 1280 * 2,
-    "vis_block12": 1280 * 2,
-    "vis_merged": 2048 * 2,
-    "thinker_12": 2048 * 2,
-    "thinker_24": 2048 * 2,
-    "thinker_36": 2048 * 2,
-    "text": 2048,
-    "fast_res3_act": 2048,
-    "fast_stem_act": 1024,
-    "pool_concat": 9216,
-    "slow_res3_act": 4096,
-    "slow_res5_act": 4096,
-    "slow_stem_act": 8192,
-    "audio_long_contrext": 2048,
-}
-
-modality_keys = list(input_dims.keys())
-
-
-# ------------------- Utility Functions -------------------
-
-
-def set_seed(seed: int = 42):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-
-
-def log_model_params(model):
-    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    wandb.log({"model/total_params": total_params})
+from utils import save_initial_state, load_initial_state, set_seed, log_model_params
 
 
 # ------------------- Training & Evaluation -------------------
@@ -95,7 +36,7 @@ def run_epoch(
     model.train() if is_train else model.eval()
 
     for batch in loader:
-        features = {k: batch[k].to(device) for k in modality_keys}
+        features = {k: batch[k].to(device) for k in MODALITY_KEYS}
         subject_ids = batch["subject_ids"]
         fmri = batch["fmri"].to(device)
         attn_mask = batch["attention_masks"].to(device)
@@ -157,31 +98,24 @@ def run_epoch(
     ), global_step
 
 
-def train():
+def train(features, input_dims, modality_keys, train_params, data_dir):
+    global MODALITY_KEYS
+    MODALITY_KEYS = modality_keys
     # --- WandB Init ---
     wandb.init(
         project="fmri-model",
-        config={
-            "epochs": 150,
-            "batch_size": 4,
-            "lr": 1e-4,
-            "weight_decay": 1e-4,
-            "device": "cuda:3",
-            "early_stop_patience": 1,
-            "lambda_sample": 0,
-            "lambda_roi": 0,
-            "lambda_mse": 0.05,
-            "fuse_mode": "concat",
-            "hidden_dim": 256,
-        },
+        config=train_params,
     )
     config = wandb.config
+    run_id   = wandb.run.id            # e.g. “soft-armadillo-18”
+    ckpt_dir = Path("checkpoints")/run_id
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Dataset ---
     norm_stats = torch.load("normalization_stats.pt")
     ds = FMRI_Dataset(
-        "fmri",
-        feature_paths=feature_paths,
+        data_dir,
+        feature_paths=features,
     )
     train_ds, valid_ds = split_dataset_by_season(
         ds, val_season="6", train_noise_std=0.0
@@ -211,7 +145,8 @@ def train():
     )
     model.to(config.device)
     log_model_params(model)
-    save_initial_state(model)
+    save_initial_state(model, f"{ckpt_dir}/initial_model.pt", f"{ckpt_dir}/initial_random_state.pt")
+
 
     optimizer = optim.AdamW(
         model.parameters(), lr=config.lr, weight_decay=config.weight_decay
@@ -273,8 +208,8 @@ def train():
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_val_epoch = epoch + 1
-            torch.save(model.state_dict(), "best_model.pt")
-            wandb.save("best_model.pt")
+            torch.save(model.state_dict(), f"{ckpt_dir}/best_model.pt")
+            wandb.save(f"{ckpt_dir}/best_model.pt")
             print(f"✅ Saved new best model at epoch {epoch + 1}")
             patience_counter = 0
         else:
@@ -299,7 +234,7 @@ def train():
         subject_count=4,
     )
     model.to(config.device)
-    load_initial_state(model)
+    load_initial_state(model, f"{ckpt_dir}/initial_model.pt", f"{ckpt_dir}/initial_random_state.pt")
 
     full_loader = DataLoader(
         ds,
@@ -343,35 +278,38 @@ def train():
             f"Epoch {epoch + 1}: Full Dataset Neg Corr Loss = {full_loss_tuple[1]:.4f}"
         )
 
-    torch.save(model.state_dict(), "final_model.pt")
-    wandb.save("final_model.pt")
+    torch.save(model.state_dict(), f"{ckpt_dir}/final_model.pt")
+    wandb.save(f"{ckpt_dir}/final_model.pt")
     print("✅ Final model trained on full dataset and saved.")
 
 
-def save_initial_state(model, path="initial_model.pt"):
-    torch.save(model.state_dict(), path)
-    random_state = {
-        "random": random.getstate(),
-        "numpy": np.random.get_state(),
-        "torch": torch.get_rng_state(),
-        "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
-    }
-    torch.save(random_state, "initial_random_state.pt")
-
-
-def load_initial_state(model, path="initial_model.pt"):
-    model.load_state_dict(torch.load(path))
-    random_state = torch.load("initial_random_state.pt", weights_only=False)
-    random.setstate(random_state["random"])
-    np.random.set_state(random_state["numpy"])
-    torch.set_rng_state(random_state["torch"])
-    if torch.cuda.is_available() and random_state["cuda"] is not None:
-        torch.cuda.set_rng_state_all(random_state["cuda"])
-
-
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description="Training enrypoint")
+    parser.add_argument(
+        "--seed", type=int, default=42, help="Random seed for reproducibility"
+    )
+    parser.add_argument("--features", "-f", type=str, default="config/features.yaml",
+                        help="Path to the YAML file with feature paths")
+    parser.add_argument(
+        "--params", "-p", type=str, default="config/params.yaml",
+        help="Path to the YAML file with training configuration"
+    )
+    args = parser.parse_args()
+    with open(args.features, "r") as f:
+        feature_dict = yaml.safe_load(f)
+        features = feature_dict["features"]
+        input_dims = feature_dict["input_dims"]
+        data_dir = feature_dict.get("data_dir", "data/fmri")
+        modality_keys = list(features.keys())
+    with open(args.params, "r") as f:
+        params = yaml.safe_load(f)
+        train_params = params["train"]
+        
+
     try:
-        train()
+        train(features=features, input_dims=input_dims, modality_keys=modality_keys, 
+              train_params=train_params, data_dir=data_dir)
     except Exception as e:
         wandb.alert(title="Run crashed", text=str(e))
         raise

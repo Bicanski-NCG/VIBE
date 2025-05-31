@@ -307,10 +307,10 @@ def train_loop(features, input_dims, modality_keys, config, data_dir):
                 break
 
     wandb.run.summary["best_val_pearson"] = best_val_loss
-    return best_val_epoch, ckpt_dir, model, full_loader
+    return best_val_epoch, ckpt_dir, model, full_loader, global_step
 
 
-def retrain_full(model, full_loader, config, best_val_epoch, ckpt_dir):
+def retrain_full(model, full_loader, config, best_val_epoch, ckpt_dir, start_step):
     """Retrain the model from initial state on the full dataset for best_val_epoch epochs."""
     print("🔁 Reloading initial model and retraining on full dataset...")
     load_initial_state(
@@ -320,7 +320,7 @@ def retrain_full(model, full_loader, config, best_val_epoch, ckpt_dir):
     )
 
     optimizer, scheduler = create_optimizer_and_scheduler(model, config)
-    global_step = 0
+    global_step = start_step
 
     for epoch in range(1, best_val_epoch + 1):
         full_losses, global_step = run_epoch(
@@ -358,10 +358,10 @@ def retrain_full(model, full_loader, config, best_val_epoch, ckpt_dir):
 
 def main():
     features, input_dims, modality_keys, train_params, data_dir = load_config()
-    best_val_epoch, ckpt_dir, model, full_loader = train_loop(
+    best_val_epoch, ckpt_dir, model, full_loader, final_step = train_loop(
         features, input_dims, modality_keys, train_params, data_dir
     )
-    retrain_full(model, full_loader, train_params, best_val_epoch, ckpt_dir)
+    retrain_full(model, full_loader, train_params, best_val_epoch, ckpt_dir, final_step)
 
 
 if __name__ == "__main__":

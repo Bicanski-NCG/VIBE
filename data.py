@@ -12,6 +12,8 @@ class FMRI_Dataset(Dataset):
         self,
         root_folder_fmri,
         feature_paths,
+        input_dims,
+        modalities,
         noise_std=0.0,
         normalization_stats=None,
         oversample_factor=1,
@@ -21,6 +23,8 @@ class FMRI_Dataset(Dataset):
         self.root_folder = root_folder_fmri
 
         self.feature_paths = feature_paths  # Dict of {modality: path}
+        self.input_dims = input_dims
+        self.modalities = modalities
 
         self.noise_std = noise_std
         self.normalization_stats = normalization_stats
@@ -148,15 +152,20 @@ def split_dataset_by_season(dataset, val_season="6", train_noise_std=0.00):
             train_samples.append(sample)
 
     train_ds = FMRI_Dataset(
-        dataset.root_folder,
-        dataset.feature_paths,
+        root_folder_fmri=dataset.root_folder,
+        feature_paths=dataset.feature_paths,
+        input_dims=dataset.input_dims,
+        modalities=dataset.modalities,
+        normalization_stats=dataset.normalization_stats,
         noise_std=train_noise_std,
         samples=train_samples,
     )
 
     val_ds = FMRI_Dataset(
-        dataset.root_folder,
-        dataset.feature_paths,
+        root_folder_fmri=dataset.root_folder,
+        feature_paths=dataset.feature_paths,
+        input_dims=dataset.input_dims,
+        modalities=dataset.modalities,
         noise_std=0.0,
         samples=val_samples,
     )

@@ -28,6 +28,7 @@ def run_epoch(
     lambda_sample=1.0,
     lambda_roi=1.0,
     lambda_mse=1.0,
+    lambda_hrf=1e-3,
 ):
     epoch_negative_corr_loss = 0.0
     epoch_sample_loss = 0.0
@@ -56,6 +57,9 @@ def run_epoch(
                 + lambda_roi * roi_loss
                 + lambda_mse * mse_loss
             )
+            if model.use_hrf_conv and model.learn_hrf:
+                hrf_dev = model.hrf_conv.weight - model.hrf_prior
+                loss += lambda_hrf * hrf_dev.norm(p=2)
 
             if is_train:
                 loss.backward()
@@ -142,14 +146,32 @@ def train(features, input_dims, modality_keys, train_params, data_dir):
         fuse_mode=config.fuse_mode,
         hidden_dim=config.hidden_dim,
         subject_count=4,
+        use_hrf_conv=config.use_hrf_conv,
+        learn_hrf=config.learn_hrf,
     )
     model.to(config.device)
     log_model_params(model)
     save_initial_state(model, f"{ckpt_dir}/initial_model.pt", f"{ckpt_dir}/initial_random_state.pt")
 
+    if config.use_hrf_conv:
+        hrf_params   = [model.hrf_conv.weight]                       # keep it as a list
+        other_params = [p for n, p in model.named_parameters()
+                        if n != "hrf_conv.weight"]
+    
+        param_groups = [
+            {"params": hrf_params,   "weight_decay": 0.0},
+            {"params": other_params, "weight_decay": config.weight_decay},
+        ]
+    else:
+        param_groups = [
+            {
+                "params": model.parameters(),
+                "weight_decay": config.weight_decay,
+            }
+        ]
 
     optimizer = optim.AdamW(
-        model.parameters(), lr=config.lr, weight_decay=config.weight_decay
+        param_groups, lr=config.lr
     )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=config.epochs
@@ -232,6 +254,8 @@ def train(features, input_dims, modality_keys, train_params, data_dir):
         fuse_mode=config.fuse_mode,
         hidden_dim=config.hidden_dim,
         subject_count=4,
+        use_hrf_conv=config.use_hrf_conv,
+        learn_hrf=config.learn_hrf,
     )
     model.to(config.device)
     load_initial_state(model, f"{ckpt_dir}/initial_model.pt", f"{ckpt_dir}/initial_random_state.pt")
@@ -243,8 +267,24 @@ def train(features, input_dims, modality_keys, train_params, data_dir):
         collate_fn=collate_fn,
         num_workers=8,
     )
+    if config.use_hrf_conv:
+        hrf_params   = [model.hrf_conv.weight]                       # keep it as a list
+        other_params = [p for n, p in model.named_parameters()
+                        if n != "hrf_conv.weight"]
+    
+        param_groups = [
+            {"params": hrf_params,   "weight_decay": 0.0},
+            {"params": other_params, "weight_decay": config.weight_decay},
+        ]
+    else:
+        param_groups = [
+            {
+                "params": model.parameters(),
+                "weight_decay": config.weight_decay,
+            }
+        ]
     optimizer = optim.AdamW(
-        model.parameters(), lr=config.lr, weight_decay=config.weight_decay
+        param_groups, lr=config.lr
     )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=best_val_epoch

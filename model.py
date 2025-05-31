@@ -2,7 +2,19 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from scipy.stats import gamma
 from RoPE import PredictionTransformerRoPE
+
+
+def spm_hrf(tr: float, size: int):
+    length = tr * size
+    t = np.arange(0, length, tr)
+
+    peak1 = gamma.pdf(t, 6)
+    peak2 = gamma.pdf(t, 16)
+    hrf = peak1 - 0.5 * peak2
+    return hrf / np.sum(hrf)
+
 
 class ModalityFusionTransformer(nn.Module):
     def __init__(
@@ -173,7 +185,8 @@ class FMRIModel(nn.Module):
         hidden_dim=256,
         mask_prob=0.2,
         fuse_mode="concat",
-        use_hrf_conv=False
+        use_hrf_conv=False,
+        learn_hrf=False,
     ):
         super().__init__()
         self.encoder = ModalityFusionTransformer(
@@ -195,18 +208,30 @@ class FMRIModel(nn.Module):
         )
 
         self.use_hrf_conv = use_hrf_conv
+        self.learn_hrf = learn_hrf
+        hrf_size = 8
+        tr = 1.49  # or your true TR
 
         if use_hrf_conv:
             self.hrf_conv = nn.Conv1d(
                 in_channels=output_dim,
                 out_channels=output_dim,
-                kernel_size=5,
+                kernel_size=hrf_size,
                 padding=0,
                 groups=output_dim,
+                bias=False,
             )
+            with torch.no_grad():
+                hrf = spm_hrf(tr=tr, size=hrf_size)
+                # reshape to (output_dim, 1, kernel_size) and broadcast
+                hrf_weight = torch.tensor(hrf).view(1, 1, -1).repeat(output_dim, 1, 1)
+                self.hrf_conv.weight.copy_(hrf_weight)
+            self.hrf_conv.weight.requires_grad = learn_hrf
+            self.register_buffer("hrf_prior", hrf_weight.clone().detach())
+
         else:
             self.hrf_conv = nn.Identity()
-
+    
         self.mask_prob = mask_prob
 
     def forward(self, features, subject_ids, attention_mask):
@@ -223,7 +248,7 @@ class FMRIModel(nn.Module):
 
         if self.use_hrf_conv:
             preds = preds.transpose(1, 2)
-            preds = F.pad(preds, (4, 0))
+            preds = F.pad(preds, (7, 0))
             preds = self.hrf_conv(preds)
             preds = preds.transpose(1, 2)
 

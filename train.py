@@ -223,25 +223,30 @@ def train():
         replacement=True
     )
 
+    n_workers = 8 * torch.cuda.device_count()
+    prefetch_factor = 4
+    persist_workers = True
+    pin_memory = True
+
     train_loader = DataLoader(
         train_ds,
         batch_size=config.batch_size,
         sampler=sampler,
         collate_fn=collate_fn,
-        num_workers=8,
-        prefetch_factor=4,
-        #persistent_workers=True,
-        #pin_memory=True
+        num_workers=n_workers,
+        prefetch_factor=prefetch_factor,
+        persistent_workers=persist_workers,
+        pin_memory=pin_memory
     )
     valid_loader = DataLoader(
         valid_ds,
         batch_size=config.batch_size,
         shuffle=False,
         collate_fn=collate_fn,
-        num_workers=8,
-        prefetch_factor=4,
-        #persistent_workers=True,
-        #pin_memory=True
+        num_workers=n_workers,
+        prefetch_factor=prefetch_factor,
+        persistent_workers=persist_workers,
+        pin_memory=pin_memory
     )
 
     # --- Model ---
@@ -349,7 +354,10 @@ def train():
         batch_size=config.batch_size,
         shuffle=True,
         collate_fn=collate_fn,
-        num_workers=8,
+        num_workers=n_workers,
+        prefetch_factor=prefetch_factor,
+        persistent_workers=persist_workers,
+        pin_memory=pin_memory
     )
     optimizer = optim.AdamW(
         model.parameters(), lr=config.lr, weight_decay=config.weight_decay

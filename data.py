@@ -28,6 +28,15 @@ class FMRI_Dataset(Dataset):
         self.oversample_factor = oversample_factor
         self.normalize_bold = normalize_bold  # enable/disable run‑wise z‑score
 
+        self._h5_cache = {}  # Cache for h5 files to avoid reopening
+
+        # Precompute feature file index
+        self._feature_index = {modality: {} for modality in feature_paths.keys()}
+        for modality, root_path in self.feature_paths.items():
+            for file_path in glob.glob(os.path.join(root_path, "**", "*.*"), recursive=True):
+                basename = os.path.splitext(os.path.basename(file_path))[0]
+                self._feature_index[modality][basename] = file_path
+
         self.subject_name_id_dict = {"sub-01": 0, "sub-02": 1, "sub-03": 2, "sub-05": 3}
 
         if samples is not None:
@@ -52,25 +61,42 @@ class FMRI_Dataset(Dataset):
                         }
                         self.samples.append(sample)
 
-                        if is_movie_sample(fmri_file):
-                            for _ in range(self.oversample_factor - 1):
-                                self.samples.append(sample.copy())
-
     def __len__(self):
         return len(self.samples)
 
-    def find_feature_file(self, feature_root, file_name):
-        matches = glob.glob(
-            os.path.join(feature_root, "**", f"*{file_name}.*"), recursive=True
-        )
-        if not matches:
-            raise FileNotFoundError(
-                f"Feature file '{file_name}' not found in '{feature_root}'"
-            )
-        return matches[0]
+    def find_feature_file(self, modailty, file_name):
+        try:
+            return self._feature_index[modailty][file_name]
+        except KeyError:
+            # feature may have prefixes like "friends_" or "movies10_"
+            for key in self._feature_index[modailty].keys():
+                if file_name in key:
+                    return self._feature_index[modailty][key]
+            else: # If no match found, raise an error
+                raise FileNotFoundError(
+                    f"Feature file for {file_name} not found in {modailty} features."
+                )
 
     def normalize(self, data, mean, std):
         return (data - mean) / std
+    
+    def _get_h5(self, path):
+        handle = self._h5_cache.get(path, None)
+        if handle is None:
+            handle = h5py.File(path, "r", libver='latest', swmr=True)
+            if handle is None:
+                raise FileNotFoundError(f"Could not open HDF5 file: {path}")
+            self._h5_cache[path] = handle
+        return handle
+    
+    def _get_feature(self, path):
+        if path.endswith(".npy"):
+            arr = np.load(path, mmap_mode='r')
+            return torch.tensor(arr, dtype=torch.float32).squeeze()
+        elif path.endswith(".pt"):
+            return torch.load(path, map_location="cpu").squeeze().float()
+        else:
+            raise ValueError(f"Unknown feature file extension: {path}")
 
     def __getitem__(self, idx):
         sample_info = self.samples[idx]
@@ -82,8 +108,7 @@ class FMRI_Dataset(Dataset):
             f"{dataset_name.split('-')[-1]}"
         )
 
-        with h5py.File(fmri_file, "r") as h5file:
-            fmri_response = h5file[dataset_name][:]
+        fmri_response = self._get_h5(fmri_file)[dataset_name][:]
 
         fmri_response_tensor = torch.tensor(fmri_response, dtype=torch.float32)
         # ---- Run‑wise (per‑key) z‑scoring ---------------------------------
@@ -97,16 +122,9 @@ class FMRI_Dataset(Dataset):
         min_samples = fmri_response_tensor.shape[0]
 
         for modality, root_path in self.feature_paths.items():
-            path = self.find_feature_file(root_path, file_name_features)
-            if path.endswith(".npy"):
-                data = torch.tensor(np.load(path), dtype=torch.float32).squeeze()
-            elif path.endswith(".pt"):
-                data = torch.load(path, map_location="cpu").squeeze().float()
-            else:
-                raise ValueError(
-                    f"Unknown feature file extension: {path}"
-                )
-            
+            path = self.find_feature_file(modality, file_name_features)
+            data = self._get_feature(path)
+
             if data.isnan().any():
                 data = torch.nan_to_num(data, nan=0.0)
 
@@ -192,11 +210,9 @@ def collate_fn(batch):
 
     # Example attention mask (you can adapt this per modality if needed)
     seq_lengths = [next(iter(f.values())).shape[0] for f in features_list]
-    attention_masks = torch.zeros(
-        (len(seq_lengths), max(seq_lengths)), dtype=torch.bool
-    )
-    for i, length in enumerate(seq_lengths):
-        attention_masks[i, :length] = 1
+    max_len = max(seq_lengths)
+    idx = torch.arange(max_len)
+    attention_masks = (idx.unsqueeze(0) < torch.tensor(seq_lengths).unsqueeze(1)).bool()
 
     return {
         "subject_ids": subject_ids,
@@ -204,11 +220,6 @@ def collate_fn(batch):
         "fmri": fmri_padded,
         "attention_masks": attention_masks,
     }
-
-
-def is_movie_sample(dataset_name):
-    # Customize this check based on how movie files are named
-    return "movie" in dataset_name.lower()
 
 
 def make_balanced_weights(dataset):

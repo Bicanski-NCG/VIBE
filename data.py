@@ -164,6 +164,37 @@ def split_dataset_by_season(dataset, val_season="6", train_noise_std=0.00):
     return train_ds, val_ds
 
 
+def split_dataset_by_name(dataset, val_name="friends_s06", train_noise_std=0.00):
+    train_samples, val_samples = [], []
+
+    for sample in dataset.samples:
+        if val_name in sample["dataset_name"].lower():
+            val_samples.append(sample)
+        else:
+            train_samples.append(sample)
+
+    train_ds = FMRI_Dataset(
+        root_folder_fmri=dataset.root_folder,
+        feature_paths=dataset.feature_paths,
+        input_dims=dataset.input_dims,
+        modalities=dataset.modalities,
+        normalization_stats=dataset.normalization_stats,
+        noise_std=train_noise_std,
+        samples=train_samples,
+    )
+
+    val_ds = FMRI_Dataset(
+        root_folder_fmri=dataset.root_folder,
+        feature_paths=dataset.feature_paths,
+        input_dims=dataset.input_dims,
+        modalities=dataset.modalities,
+        noise_std=0.0,
+        samples=val_samples,
+    )
+
+    return train_ds, val_ds
+
+
 def collate_fn(batch):
     subject_ids, features_list, fmri_responses = zip(*batch)
 

@@ -1,4 +1,5 @@
 import os
+import re
 import glob
 import h5py
 import torch
@@ -52,12 +53,18 @@ class FMRI_Dataset(Dataset):
                 with h5py.File(fmri_file, "r") as h5file:
                     for dataset_name in h5file.keys():
                         num_samples = h5file[dataset_name].shape[0]
+                        name_re = re.compile(r"^(?:ses-\d+_task-)(?P<file_name>(?P<name>s\d+|[a-zA-Z]+)[a-zA-Z0-9]+)(?:_run-\d*$)?")
+                        match = name_re.match(dataset_name)                            
+                        file_name = match.group("file_name")
+                        name = match.group("name")
                         sample = {
                             "subject_id": subject_id,
                             "fmri_file": fmri_file,
                             "dataset_name": dataset_name,
                             "num_samples": num_samples,
                             "is_movie": "movie" in fmri_file.lower(),
+                            "file_name": file_name,
+                            "name": name,
                         }
                         self.samples.append(sample)
 
@@ -165,12 +172,12 @@ def compute_mean_std(dataset):
     return stats
 
 
-def split_dataset_by_name(dataset, val_name="friends_06", train_noise_std=0.00,
+def split_dataset_by_name(dataset, val_name="06", train_noise_std=0.00,
                           normalize_validation_bold=False):
     train_samples, val_samples = [], []
 
     for sample in dataset.samples:
-        if val_name.lower() in sample["dataset_name"].lower():
+        if val_name.lower() in sample["name"].lower():
             val_samples.append(sample)
         else:
             train_samples.append(sample)
@@ -222,26 +229,87 @@ def collate_fn(batch):
     }
 
 
-def make_balanced_weights(dataset):
+def make_group_weights(dataset, filter_on: str):
     """
-    Return a weight tensor wᵢ that equalises the *expected number of TRs*
-    drawn from each domain per epoch.
-    """
+    Return a weight‐vector w ∈ ℝᴺ that equalizes the total number of TRs
+    drawn from each distinct value of `filter_on`.
 
+    For example:
+      • filter_on="is_movie":
+          • groups are {False} and {True}, each group’s weights sum to 1.
+      • filter_on="dataset_name":
+          • one group per unique dataset_name, each group’s weights sum to 1.
+
+    The rule is simple: if sample i has
+        lengths[i] = dataset.samples[i]["num_samples"], 
+        value[i] = dataset.samples[i][filter_on],
+
+    then, within each group G = {i | value[i] = v}, we set
+        w[i] = lengths[i] / sum_{j ∈ G} lengths[j].
+
+    If for some group G the total sum is zero (i.e. all num_samples==0),
+    we simply assign equal nonzero weights (1 / |G|) for that group.
+
+    Parameters
+    ----------
+    dataset : FMRI_Dataset
+        Any instance whose `dataset.samples` is a list of dicts, each having
+        at least the key `"num_samples"` and the key `filter_on`.
+
+    filter_on : str
+        The sample‐dict key to group by. Common choices:
+          • "is_movie"
+          • "dataset_name"
+          • (or any other key present in sample_dict)
+
+    Returns
+    -------
+    weights : torch.FloatTensor, shape (N,)
+        A vector of per‐sample weights. For each distinct value v of `filter_on`,
+        the subarray `weights[G]` (where G = { i | sample[i][filter_on] == v }) 
+        will sum to 1.
+
+    Example
+    -------
+    # Per‐domain (movie vs friends)
+    w_movie = make_group_weights(train_ds, filter_on="is_movie")
+
+    # Per‐stimulus weights (one group per dataset_name)
+    w_stim = make_group_weights(train_ds, filter_on="dataset_name")
+    """
+    # 1) Extract lengths (number of TRs) and the grouping‐key values
     lengths = torch.tensor(
-        [sample["num_samples"] for sample in dataset.samples], dtype=torch.float32
+        [sample["num_samples"] for sample in dataset.samples],
+        dtype=torch.float32,
     )
 
-    is_movie = torch.tensor(
-        [sample["is_movie"] for sample in dataset.samples], dtype=torch.bool
-    )
+    # Ensure filter_on exists in each sample:
+    try:
+        values = [sample[filter_on] for sample in dataset.samples]
+    except KeyError:
+        raise KeyError(f"Key '{filter_on}' not found in sample dict keys.")
 
-    L_movies = lengths[is_movie].sum()
-    L_friends = lengths[~is_movie].sum()
+    # 2) Build a mapping from each distinct key‐value → list of indices
+    value_to_indices = {}
+    for idx, v in enumerate(values):
+        value_to_indices.setdefault(v, []).append(idx)
 
-    weights = torch.where(
-        is_movie,
-        lengths / L_movies,
-        lengths / L_friends
-    )
+    # 3) Allocate output weight tensor
+    N = len(dataset.samples)
+    weights = torch.zeros(N, dtype=torch.float32)
+
+    # 4) For each group, normalize within that group
+    for v, idx_list in value_to_indices.items():
+        group_lengths = lengths[idx_list]
+        subtotal = float(group_lengths.sum().item())
+
+        if subtotal == 0.0:
+            # Avoid division by zero: assign uniform weights
+            uniform_w = 1.0 / len(idx_list)
+            for i in idx_list:
+                weights[i] = uniform_w
+        else:
+            # w[i] = lengths[i] / total_length_of_this_group
+            weights[idx_list] = group_lengths / subtotal
+
     return weights

@@ -5,7 +5,7 @@ import wandb
 import random
 import numpy as np
 
-from data import FMRI_Dataset, split_dataset_by_name, collate_fn, make_balanced_weights
+from data import FMRI_Dataset, split_dataset_by_name, collate_fn, make_group_weights
 from model import FMRIModel
 from losses import (
     masked_negative_pearson_loss,
@@ -182,7 +182,7 @@ def train():
             "val_name": "s06",
             "normalize_bold": False,
             'normalize_validation_bold': False,
-            "stratify_movie_vs_friends": True
+            "stratification_variable": "is_movie", # "name" -> by movie name or season, "is_movie" -> by movie vs friends
         },
     )
     config = wandb.config
@@ -199,23 +199,12 @@ def train():
         normalize_validation_bold=config.normalize_validation_bold
     )
 
-    if config.stratify_movie_vs_friends:
-        train_weights = make_balanced_weights(train_ds)
+    if config.stratification_variable:
+        train_weights = make_group_weights(train_ds, filter_on=config.stratification_variable)
     else:
         train_weights = torch.ones(len(train_ds), dtype=torch.float32)
 
     print(f"Training samples: {len(train_ds)}, Validation samples: {len(valid_ds)}")
-
-    is_movie = torch.tensor(
-        [sample["is_movie"] for sample in train_ds.samples], dtype=torch.bool
-    )
-
-    print(is_movie.sum().item(), "movie samples in training set")
-    print((~is_movie).sum().item(), "non-movie samples in training set")
-    print(f"Movie proportion in training set: {is_movie.float().mean().item():.4f}")
-    print(f"Movie weight: {train_weights[is_movie].mean():.4f}")
-    print(f"Non-movie weight: {train_weights[~is_movie].mean():.4f}")
-    print(f"Total training weight: {train_weights.sum():.4f}")
 
     sampler = torch.utils.data.WeightedRandomSampler(
         weights=train_weights,
@@ -231,7 +220,8 @@ def train():
     train_loader = DataLoader(
         train_ds,
         batch_size=config.batch_size,
-        sampler=sampler,
+        sampler=sampler if config.stratification_variable else None,
+        shuffle=False if config.stratification_variable else True,
         collate_fn=collate_fn,
         num_workers=n_workers,
         prefetch_factor=prefetch_factor,

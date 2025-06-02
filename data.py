@@ -48,6 +48,7 @@ class FMRI_Dataset(Dataset):
                             "fmri_file": fmri_file,
                             "dataset_name": dataset_name,
                             "num_samples": num_samples,
+                            "is_movie": "movie" in dataset_name.lower(),
                         }
                         self.samples.append(sample)
 
@@ -146,7 +147,8 @@ def compute_mean_std(dataset):
     return stats
 
 
-def split_dataset_by_name(dataset, val_name="friends_06", train_noise_std=0.00):
+def split_dataset_by_name(dataset, val_name="friends_06", train_noise_std=0.00,
+                          normalize_validation_bold=False):
     train_samples, val_samples = [], []
 
     for sample in dataset.samples:
@@ -169,7 +171,7 @@ def split_dataset_by_name(dataset, val_name="friends_06", train_noise_std=0.00):
         dataset.feature_paths,
         noise_std=0.0,
         samples=val_samples,
-        normalize_bold=dataset.normalize_bold,
+        normalize_bold=normalize_validation_bold,
     )
 
     return train_ds, val_ds
@@ -207,3 +209,28 @@ def collate_fn(batch):
 def is_movie_sample(dataset_name):
     # Customize this check based on how movie files are named
     return "movie" in dataset_name.lower()
+
+
+def make_balanced_weights(dataset):
+    """
+    Return a weight tensor wᵢ that equalises the *expected number of TRs*
+    drawn from each domain per epoch.
+    """
+
+    lengths = torch.tensor(
+        [sample["num_samples"] for sample in dataset.samples], dtype=torch.float32
+    )
+
+    is_movie = torch.tensor(
+        [sample["is_movie"] for sample in dataset.samples], dtype=torch.bool
+    )
+
+    L_movies = lengths[is_movie].sum()
+    L_friends = lengths[~is_movie].sum()
+
+    weights = torch.where(
+        is_movie,
+        lengths / L_movies,
+        lengths / L_friends
+    )
+    return weights

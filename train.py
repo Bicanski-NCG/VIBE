@@ -5,12 +5,12 @@ import wandb
 import random
 import numpy as np
 
-from data import FMRI_Dataset, split_dataset_by_season, collate_fn
+from data import FMRI_Dataset, split_dataset_by_name, collate_fn, make_balanced_weights
 from model import FMRIModel
 from losses import (
     masked_negative_pearson_loss,
     sample_similarity_loss,
-    roi_similarity_loss,
+    roi_similarity_loss
 )
 from torch import nn
 
@@ -188,16 +188,30 @@ def train():
     ds = FMRI_Dataset(
         "fmri",
         feature_paths=feature_paths,
+        normalize_bold=True
     )
-    train_ds, valid_ds = split_dataset_by_season(
-        ds, val_season="6", train_noise_std=0.0
+    train_ds, valid_ds = split_dataset_by_name(
+        ds, val_name="bourne", train_noise_std=0.0,
+        normalize_validation_bold=True
     )
+
+    train_weights = make_balanced_weights(train_ds)
+
+    sampler = torch.utils.data.WeightedRandomSampler(
+        weights=train_weights,
+        num_samples=len(train_weights),
+        replacement=True
+    )
+
     train_loader = DataLoader(
         train_ds,
         batch_size=config.batch_size,
-        shuffle=True,
+        sampler=sampler,
         collate_fn=collate_fn,
         num_workers=8,
+        prefetch_factor=4,
+        #persistent_workers=True,
+        #pin_memory=True
     )
     valid_loader = DataLoader(
         valid_ds,
@@ -205,6 +219,9 @@ def train():
         shuffle=False,
         collate_fn=collate_fn,
         num_workers=8,
+        prefetch_factor=4,
+        #persistent_workers=True,
+        #pin_memory=True
     )
 
     # --- Model ---

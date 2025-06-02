@@ -48,7 +48,7 @@ class FMRI_Dataset(Dataset):
                             "fmri_file": fmri_file,
                             "dataset_name": dataset_name,
                             "num_samples": num_samples,
-                            "is_movie": "movie" in dataset_name.lower(),
+                            "is_movie": "movie" in fmri_file.lower(),
                         }
                         self.samples.append(sample)
 

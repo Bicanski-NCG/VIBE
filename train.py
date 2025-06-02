@@ -179,6 +179,10 @@ def train():
             "lambda_mse": 0.01,
             "fuse_mode": "concat",
             "hidden_dim": 256,
+            "val_name": "s06",
+            "normalize_bold": False,
+            'normalize_validation_bold': False,
+            "stratify_movie_vs_friends": True
         },
     )
     config = wandb.config
@@ -188,14 +192,30 @@ def train():
     ds = FMRI_Dataset(
         "fmri",
         feature_paths=feature_paths,
-        normalize_bold=True
+        normalize_bold=config.normalize_bold,
     )
     train_ds, valid_ds = split_dataset_by_name(
-        ds, val_name="bourne", train_noise_std=0.0,
-        normalize_validation_bold=True
+        ds, val_name=config.val_name, train_noise_std=0.0,
+        normalize_validation_bold=config.normalize_validation_bold
     )
 
-    train_weights = make_balanced_weights(train_ds)
+    if config.stratify_movie_vs_friends:
+        train_weights = make_balanced_weights(train_ds)
+    else:
+        train_weights = torch.ones(len(train_ds), dtype=torch.float32)
+
+    print(f"Training samples: {len(train_ds)}, Validation samples: {len(valid_ds)}")
+
+    is_movie = torch.tensor(
+        [sample["is_movie"] for sample in train_ds.samples], dtype=torch.bool
+    )
+
+    print(is_movie.sum().item(), "movie samples in training set")
+    print((~is_movie).sum().item(), "non-movie samples in training set")
+    print(f"Movie proportion in training set: {is_movie.float().mean().item():.4f}")
+    print(f"Movie weight: {train_weights[is_movie].mean():.4f}")
+    print(f"Non-movie weight: {train_weights[~is_movie].mean():.4f}")
+    print(f"Total training weight: {train_weights.sum():.4f}")
 
     sampler = torch.utils.data.WeightedRandomSampler(
         weights=train_weights,

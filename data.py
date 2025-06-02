@@ -16,6 +16,7 @@ class FMRI_Dataset(Dataset):
         normalization_stats=None,
         oversample_factor=1,
         samples=None,
+        normalize_bold=True,
     ):
         super().__init__()
         self.root_folder = root_folder_fmri
@@ -25,6 +26,7 @@ class FMRI_Dataset(Dataset):
         self.noise_std = noise_std
         self.normalization_stats = normalization_stats
         self.oversample_factor = oversample_factor
+        self.normalize_bold = normalize_bold  # enable/disable run‑wise z‑score
 
         self.subject_name_id_dict = {"sub-01": 0, "sub-02": 1, "sub-03": 2, "sub-05": 3}
 
@@ -83,6 +85,12 @@ class FMRI_Dataset(Dataset):
             fmri_response = h5file[dataset_name][:]
 
         fmri_response_tensor = torch.tensor(fmri_response, dtype=torch.float32)
+        # ---- Run‑wise (per‑key) z‑scoring ---------------------------------
+        if self.normalize_bold:
+            mu    = fmri_response_tensor.mean(dim=0, keepdim=True)
+            sigma = fmri_response_tensor.std(dim=0, keepdim=True) + 1e-6
+            fmri_response_tensor = (fmri_response_tensor - mu) / sigma
+        # -------------------------------------------------------------------
 
         features = {}
         min_samples = fmri_response_tensor.shape[0]
@@ -142,7 +150,7 @@ def split_dataset_by_name(dataset, val_name="friends_06", train_noise_std=0.00):
     train_samples, val_samples = [], []
 
     for sample in dataset.samples:
-        if val_name in sample["dataset_name"].split("-")[-1].lower():
+        if val_name.lower() in sample["dataset_name"].lower():
             val_samples.append(sample)
         else:
             train_samples.append(sample)
@@ -152,6 +160,7 @@ def split_dataset_by_name(dataset, val_name="friends_06", train_noise_std=0.00):
         dataset.feature_paths,
         noise_std=train_noise_std,
         samples=train_samples,
+        normalize_bold=dataset.normalize_bold,
         
     )
 
@@ -160,6 +169,7 @@ def split_dataset_by_name(dataset, val_name="friends_06", train_noise_std=0.00):
         dataset.feature_paths,
         noise_std=0.0,
         samples=val_samples,
+        normalize_bold=dataset.normalize_bold,
     )
 
     return train_ds, val_ds

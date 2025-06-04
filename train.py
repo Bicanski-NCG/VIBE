@@ -109,8 +109,8 @@ def get_data_loaders(features, input_dims, modality_keys, config, data_dir):
     train_loader = DataLoader(
         train_ds,
         batch_size=config["batch_size"],
-        sampler=sampler if config.get("stratifictation_variable", False) else None,
-        shuffle=False if config.get("stratifictation_variable", False) else True,
+        sampler=sampler if config.get("stratification_variable", False) else None,
+        shuffle=False if config.get("stratification_variable", False) else True,
         collate_fn=collate_fn,
         num_workers=config.get("num_workers", 8),
         prefetch_factor=config.get("prefetch_factor", 4),

@@ -19,7 +19,7 @@ class FMRI_Dataset(Dataset):
         normalization_stats=None,
         oversample_factor=1,
         samples=None,
-        normalize_bold=True,
+        normalize_bold=False,
     ):
         super().__init__()
         self.root_folder = root_folder_fmri

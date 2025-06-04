@@ -1,0 +1,9 @@
+h5py
+torch
+numpy<2
+wandb
+labml-nn
+fastprogress
+scipy
+nilearn
+matplotlib

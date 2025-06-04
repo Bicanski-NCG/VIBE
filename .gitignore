@@ -9,6 +9,15 @@ wheels/
 # Virtual environments
 .venv
 
+# IDE and editor files
+.vscode/
+.idea/
+
+# Data files
 fmri/
 wandb/
-Features/
+job_logs/
+features/
+data/
+checkpoints/
+scripts/*

@@ -4,16 +4,6 @@ import random
 import wandb
 from pathlib import Path
 import json
-
-def _deep_update(a: dict, b: dict):
-    "Recursively merge b into a and return the result."
-    for k, v in b.items():
-        if isinstance(v, dict) and k in a and isinstance(a[k], dict):
-            _deep_update(a[k], v)
-        else:
-            a[k] = v
-    return a
-
 import numpy as np
 import torch
 from torch import nn
@@ -27,7 +17,7 @@ from losses import (
     sample_similarity_loss,
     roi_similarity_loss,
 )
-from utils import save_initial_state, load_initial_state, set_seed, log_model_params
+from utils import save_initial_state, load_initial_state, set_seed, log_model_params, _deep_update
 
 
 def load_config():
@@ -79,7 +69,8 @@ def get_data_loaders(features, input_dims, modality_keys, cfg):
     # Assume normalization stats have been precomputed
     norm_stats = torch.load(cfg["paths"]["normalization_stats"])
 
-    data_dir = cfg["paths"]["fmri"]
+    fmri_dir = cfg["paths"]["fmri"]
+    features_dir = cfg["paths"]["features"]
     batch_size = cfg["data"]["batch_size"]
     noise_std  = cfg["data"].get("train_noise_std", 0.0)
     use_normalization = cfg["data"].get("use_normalization", False)
@@ -87,9 +78,13 @@ def get_data_loaders(features, input_dims, modality_keys, cfg):
     num_workers = cfg["data"].get("num_workers", 8)
     val_name   = cfg["data"]["val_name"]
 
+    feature_paths = {
+        modality: Path(features_dir) / path for modality, path in features.items()
+    }
+
     ds = FMRI_Dataset(
-        data_dir,
-        feature_paths=features,
+        fmri_dir,
+        feature_paths=feature_paths,
         input_dims=input_dims,
         modalities=modality_keys,
         noise_std=noise_std,
@@ -98,9 +93,9 @@ def get_data_loaders(features, input_dims, modality_keys, cfg):
     )
     print(f"Dataset size: {len(ds)} samples")
     # val_name like "s06" → val_season="6"
-    val_season = val_name[1:] if val_name.startswith("s") else val_name
+    #val_season = val_name[1:] if val_name.startswith("s") else val_name
     train_ds, valid_ds = split_dataset_by_season(
-        ds, val_season=val_season, train_noise_std=0.0
+        ds, val_season=6, train_noise_std=0.0
     )
 
     train_loader = DataLoader(
@@ -145,20 +140,19 @@ def build_model(input_dims, cfg, device):
 
 def create_optimizer_and_scheduler(model, cfg):
     """Create optimizer with param groups and scheduler, handling HRF conv if enabled."""
-    optim_cfg = cfg["optim"]
     if getattr(model, "use_hrf_conv", False) and getattr(model, "learn_hrf", False):
         hrf_params = [model.hrf_conv.weight]
         other_params = [p for n, p in model.named_parameters() if n != "hrf_conv.weight"]
         param_groups = [
             {"params": hrf_params, "weight_decay": 0.0},
-            {"params": other_params, "weight_decay": optim_cfg["weight_decay"]},
+            {"params": other_params, "weight_decay": cfg["optim"]["weight_decay"]},
         ]
     else:
-        param_groups = [{"params": model.parameters(), "weight_decay": optim_cfg["weight_decay"]}]
+        param_groups = [{"params": model.parameters(), "weight_decay": cfg["optim"]["weight_decay"]}]
 
-    optimizer = optim.AdamW(param_groups, lr=optim_cfg["lr"])
+    optimizer = optim.AdamW(param_groups, lr=cfg["optim"]["lr"])
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=optim_cfg["epochs"]
+        optimizer, T_max=cfg["train"]["epochs"]
     )
     return optimizer, scheduler
 
@@ -188,13 +182,13 @@ def run_epoch(loader, model, optimizer, device, is_train, global_step, config):
             mse_loss = nn.functional.mse_loss(pred, fmri)
             loss = (
                 negative_corr_loss
-                + config["data"]["lambda_sample"] * sample_loss
-                + config["data"]["lambda_roi"] * roi_loss
-                + config["data"]["lambda_mse"] * mse_loss
+                + config["train"]["lambda_sample"] * sample_loss
+                + config["train"]["lambda_roi"] * roi_loss
+                + config["train"]["lambda_mse"] * mse_loss
             )
             if getattr(model, "use_hrf_conv", False) and getattr(model, "learn_hrf", False):
                 hrf_dev = model.hrf_conv.weight - model.hrf_prior
-                loss += config["model"].get("lambda_hrf", 0.0) * hrf_dev.norm(p=2)
+                loss += config["train"].get("lambda_hrf", 0.0) * hrf_dev.norm(p=2)
 
             if is_train:
                 loss.backward()
@@ -219,9 +213,9 @@ def run_epoch(loader, model, optimizer, device, is_train, global_step, config):
 
     total_loss = (
         epoch_negative_corr_loss / len(loader)
-        + config["data"]["lambda_sample"] * (epoch_sample_loss / len(loader))
-        + config["data"]["lambda_roi"] * (epoch_roi_loss / len(loader))
-        + config["data"]["lambda_mse"] * (epoch_mse_loss / len(loader))
+        + config["train"]["lambda_sample"] * (epoch_sample_loss / len(loader))
+        + config["train"]["lambda_roi"] * (epoch_roi_loss / len(loader))
+        + config["train"]["lambda_mse"] * (epoch_mse_loss / len(loader))
     )
     return (
         total_loss,
@@ -265,7 +259,7 @@ def train_loop(features, input_dims, modality_keys, cfg):
     global_step = 0
     best_val_epoch = 0
 
-    for epoch in range(1, cfg["optim"]["epochs"] + 1):
+    for epoch in range(1, cfg["train"]["epochs"] + 1):
         train_losses, global_step = run_epoch(
             train_loader,
             model,
@@ -318,8 +312,8 @@ def train_loop(features, input_dims, modality_keys, cfg):
             patience_counter = 0
         else:
             patience_counter += 1
-            print(f"Patience {patience_counter}/{cfg['optim']['early_stop_patience']}")
-            if patience_counter >= cfg["optim"]["early_stop_patience"]:
+            print(f"Patience {patience_counter}/{cfg['train']['early_stop_patience']}")
+            if patience_counter >= cfg["train"]["early_stop_patience"]:
                 print("⏹️ Early stopping triggered")
                 break
 

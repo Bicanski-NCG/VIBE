@@ -3,6 +3,15 @@ import wandb
 import numpy as np
 import torch
 
+def _deep_update(a: dict, b: dict):
+    "Recursively merge b into a and return the result."
+    for k, v in b.items():
+        if isinstance(v, dict) and k in a and isinstance(a[k], dict):
+            _deep_update(a[k], v)
+        else:
+            a[k] = v
+    return a
+
 def set_seed(seed: int = 42):
     random.seed(seed)
     np.random.seed(seed)

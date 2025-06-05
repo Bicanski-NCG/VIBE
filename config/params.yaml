@@ -39,8 +39,3 @@ train:
   lambda_roi:                0.0
   lambda_mse:                0.01
   lambda_hrf:                0.000
-
-  device:                    "auto"       # "auto" or eg. "cuda:0"
-
-# ------------------------------ Reproducibility ------------------------------
-seed:                      null      # set via --seed or chosen at runtime

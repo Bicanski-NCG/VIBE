@@ -1,0 +1,16 @@
+# ------------------------------ Path settings ------------------------------
+paths:
+  # Path to folder containing features. Will be prepended to the feature specification in features.yaml
+  features: "/path/to/features"
+  fmri: "/path/to/fmri"
+  stim: "/path/to/stimuli"
+  checkpoints: "/path/to/checkpoints"
+  normalization_stats: "/path/to/normalization_stats.pt"
+
+# ------------------------------ WandB ------------------------------
+wandb:
+  project: "fmri-model"
+  path: "/path/to/wandb"
+
+# ------------------------------ Device config ------------------------------
+device: "auto" # "auto" or device e.g. "cuda:0"

@@ -21,3 +21,6 @@ features/
 data/
 checkpoints/
 scripts/*
+
+# Local configuration files
+local.yaml

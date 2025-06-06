@@ -10,6 +10,9 @@ from torch import nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
+from collections import defaultdict
+from scipy.stats import pearsonr
+
 from data import FMRI_Dataset, split_dataset_by_name, collate_fn, make_group_weights
 from model import FMRIModel
 from losses import (
@@ -18,6 +21,46 @@ from losses import (
     roi_similarity_loss
 )
 from utils import save_initial_state, load_initial_state, set_seed, log_model_params
+from viz import plot_glass_brain_set, plot_corr_hist_set, plot_time_voxel_imshow
+
+
+def collect_predictions(loader, model, device):
+    """
+    Run model over `loader` (no grad) and return:
+        fmri_true  : list of (T, V) arrays per subject in order
+        fmri_pred  : list of (T, V) arrays per subject in same order
+        subj_order : list of subject IDs as strings ("01", "02", ...)
+        atlas_paths: list of atlas paths (looked up from dataset samples)
+    Assumes each batch contains a single subject only (Algonauts starter).
+    """
+    model.eval()
+    subj_to_true = defaultdict(list)
+    subj_to_pred = defaultdict(list)
+    subj_to_atlas = {}
+    with torch.no_grad():
+        for batch in loader:
+            subj_ids = batch["subject_ids"]      # tensor shape (B,)
+            fmri     = batch["fmri"].to(device)
+            attn     = batch["attention_masks"].to(device)
+            feats    = {k: batch[k].to(device) for k in loader.dataset.modalities}
+
+            pred = model(feats, subj_ids, attn)
+
+            for i, s in enumerate(subj_ids):
+                sid = f"{int(s):02d}"
+                subj_to_true[sid].append(fmri[i].cpu().numpy())
+                subj_to_pred[sid].append(pred[i].cpu().numpy())
+                if sid not in subj_to_atlas:
+                    atlas_path = loader.dataset.samples[0]["subject_atlas"].format(subject=sid)
+                    subj_to_atlas[sid] = atlas_path
+
+    fmri_true, fmri_pred, subj_order, atlas_paths = [], [], [], []
+    for sid in sorted(subj_to_true.keys()):
+        fmri_true.append(np.concatenate(subj_to_true[sid], axis=0))
+        fmri_pred.append(np.concatenate(subj_to_pred[sid], axis=0))
+        subj_order.append(sid)
+        atlas_paths.append(subj_to_atlas[sid])
+    return fmri_true, fmri_pred, subj_order, atlas_paths
 
 
 def load_config():
@@ -343,6 +386,27 @@ def train_loop(features, input_dims, modality_keys, config, data_dir):
             if patience_counter >= config["early_stop_patience"]:
                 print("⏹️ Early stopping triggered")
                 break
+    # ── Generate visual diagnostics on best model ──────────────
+    print("📊 Generating visualisations on validation set …")
+    model.load_state_dict(torch.load(ckpt_dir / "best_model.pt"))
+    fmri_true, fmri_pred, subj_ids, atlas_paths = collect_predictions(
+        valid_loader, model, config["device"]
+    )
+    prefix_tag = f"best_epoch"
+    plot_glass_brain_set(fmri_true, fmri_pred, subj_ids, atlas_paths,
+                         out_dir=str(ckpt_dir), prefix=prefix_tag)
+    # compute per‑voxel r once to reuse for histogram + imshow
+    r_lists = [
+        np.array([pearsonr(t[:, v], p[:, v])[0] for v in range(t.shape[1])])
+        for t, p in zip(fmri_true, fmri_pred)
+    ]
+    plot_corr_hist_set(r_lists, subj_ids, out_dir=str(ckpt_dir), prefix=prefix_tag)
+    # time×voxel imshow for each subject
+    #for t, p, sid in zip(fmri_true, fmri_pred, subj_ids):
+    #    plot_time_voxel_imshow(t, p, sid, prefix_tag, out_dir=str(ckpt_dir), prefix=prefix_tag)
+    import glob
+    for png in glob.glob(f"{ckpt_dir}/{prefix_tag}_*.png"):
+        wandb.log({f"viz/{Path(png).stem}": wandb.Image(png)}, step=global_step)
 
     wandb.run.summary["best_val_pearson"] = best_val_loss
     return best_val_epoch, ckpt_dir, model, full_loader, global_step

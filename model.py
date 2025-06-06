@@ -39,6 +39,7 @@ class ModalityFusionTransformer(nn.Module):
 
         self.subject_dropout_prob = subject_dropout_prob
         self.subject_embeddings = nn.Embedding(subject_count + 1, hidden_dim)
+        self.run_embeddings = nn.Embedding(3, hidden_dim)
         self.null_subject_index = subject_count
 
         if use_transformer:
@@ -65,13 +66,14 @@ class ModalityFusionTransformer(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def forward(self, inputs: dict, subject_ids):
+    def forward(self, inputs: dict, subject_ids, run_ids):
         B, T, _ = next(iter(inputs.values())).shape
 
         projected = [self.projections[name](inputs[name]) for name in self.projections]
         x = torch.stack(projected, dim=2)  # (B, T, num_modalities, D)
 
         subject_ids = torch.tensor(subject_ids, device=x.device, dtype=torch.long)
+        run_ids = torch.tensor(run_ids, device=x.device, dtype=torch.long)
         if self.training and self.subject_dropout_prob > 0:
             drop_mask = (
                 torch.rand(subject_ids.size(0), device=subject_ids.device)
@@ -83,7 +85,10 @@ class ModalityFusionTransformer(nn.Module):
         subj_emb = self.subject_embeddings(subject_ids).unsqueeze(1).unsqueeze(2)
         subj_emb = subj_emb.expand(-1, T, 1, -1)
 
-        x = torch.cat([x, subj_emb], dim=2)  # (B, T, num_modalities+1, D)
+        run_emb = self.run_embeddings(run_ids).unsqueeze(1).unsqueeze(2)
+        run_emb = run_emb.expand(-1, T, 1, -1)
+
+        x = torch.cat([x, subj_emb, run_emb], dim=2)  # (B, T, num_modalities+2, D)
         x = x.view(B * T, x.shape[2], -1)
 
         fused = self.transformer(x)
@@ -194,7 +199,7 @@ class FMRIModel(nn.Module):
         )
 
         fused_dim = (
-            hidden_dim * (len(input_dims) + 1)
+            hidden_dim * (len(input_dims) + 2)
             if fuse_mode == "concat"
             else hidden_dim
         )
@@ -234,7 +239,7 @@ class FMRIModel(nn.Module):
     
         self.mask_prob = mask_prob
 
-    def forward(self, features, subject_ids, attention_mask):
+    def forward(self, features, subject_ids, run_ids, attention_mask):
         if self.training and self.mask_prob > 0:
             mask = (
                 torch.rand(attention_mask.shape, device=attention_mask.device)
@@ -243,7 +248,7 @@ class FMRIModel(nn.Module):
             attention_mask = attention_mask.clone()
             attention_mask[mask] = False
 
-        fused = self.encoder(features, subject_ids)
+        fused = self.encoder(features, subject_ids, run_ids)
         preds = self.predictor(fused, attention_mask)
 
         if self.use_hrf_conv:

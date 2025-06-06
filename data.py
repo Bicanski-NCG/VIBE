@@ -62,6 +62,7 @@ class FMRI_Dataset(Dataset):
                         file_name = match.group("file_name")
                         name = match.group("name")
                         run = match.group("run") if match.group("run") else 1
+                        has_multiple_runs = match.group("run") is not None
                         sample = {
                             "subject_id": subject_id,
                             "fmri_file": fmri_file,
@@ -71,6 +72,7 @@ class FMRI_Dataset(Dataset):
                             "file_name": file_name,
                             "name": name,
                             "run": int(run) - 1,
+                            "has_multiple_runs": has_multiple_runs
                         }
                         self.samples.append(sample)
 
@@ -114,6 +116,7 @@ class FMRI_Dataset(Dataset):
     def __getitem__(self, idx):
         sample_info = self.samples[idx]
         subject_id = self.subject_name_id_dict[sample_info["subject_id"]]
+        run_id = int(sample_info["has_multiple_runs"]) + sample_info["run"]
         fmri_file = sample_info["fmri_file"]
         dataset_name = sample_info["dataset_name"]
 
@@ -162,7 +165,7 @@ class FMRI_Dataset(Dataset):
             features[key] = features[key][:min_samples]
         fmri_response_tensor = fmri_response_tensor[:min_samples]
 
-        return subject_id, features, fmri_response_tensor
+        return subject_id, run_id, features, fmri_response_tensor
 
 
 def compute_mean_std(dataset):
@@ -241,7 +244,7 @@ def split_dataset_by_name(dataset, val_name="06", val_run="all",
 
 
 def collate_fn(batch):
-    subject_ids, features_list, fmri_responses = zip(*batch)
+    subject_ids, run_ids, features_list, fmri_responses = zip(*batch)
 
     all_modalities = features_list[0].keys()
     padded_features = {
@@ -261,6 +264,7 @@ def collate_fn(batch):
 
     return {
         "subject_ids": subject_ids,
+        "run_ids": run_ids,
         **padded_features,
         "fmri": fmri_padded,
         "attention_masks": attention_masks,

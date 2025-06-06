@@ -198,6 +198,7 @@ def run_epoch(loader, model, optimizer, device, is_train, global_step, config):
     for batch in loader:
         features = {k: batch[k].to(device) for k in loader.dataset.modalities}
         subject_ids = batch["subject_ids"]
+        run_ids = batch["run_ids"]
         fmri = batch["fmri"].to(device)
         attn_mask = batch["attention_masks"].to(device)
 
@@ -205,7 +206,7 @@ def run_epoch(loader, model, optimizer, device, is_train, global_step, config):
             optimizer.zero_grad()
 
         with torch.set_grad_enabled(is_train):
-            pred = model(features, subject_ids, attn_mask)
+            pred = model(features, subject_ids, run_ids,attn_mask)
             negative_corr_loss = masked_negative_pearson_loss(pred, fmri, attn_mask)
             sample_loss = sample_similarity_loss(pred, fmri, attn_mask)
             roi_loss = roi_similarity_loss(pred, fmri, attn_mask)

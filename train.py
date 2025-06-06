@@ -43,6 +43,12 @@ def load_config():
         default="config/params.yaml",
         help="Path to the YAML file with training configuration",
     )
+    parser.add_argument(
+        "--name",
+        type=str,
+        default=None,
+        help="Name for the W&B run",
+    )
     args = parser.parse_args()
 
     # Determine final seed: use provided one or generate a new random seed
@@ -69,6 +75,7 @@ def load_config():
 
     # Log the chosen seed in the config for W&B metadata
     train_params["seed"] = chosen_seed
+    train_params["run_name"] = args.name
 
     return features, input_dims, modality_keys, train_params, data_dir
 
@@ -89,7 +96,10 @@ def get_data_loaders(features, input_dims, modality_keys, config, data_dir):
     print(f"Dataset size: {len(ds)} samples")
 
     train_ds, valid_ds = split_dataset_by_name(
-        ds, val_name=config.get("val_name", "s06"), train_noise_std=0.0,
+        ds,
+        val_name=config.get("val_name", "s06"),
+        val_run=config.get("val_run", "all"),
+        train_noise_std=0.0,
         normalize_validation_bold=config.get("normalize_validation_bold", False),
     )
 
@@ -113,9 +123,9 @@ def get_data_loaders(features, input_dims, modality_keys, config, data_dir):
         shuffle=False if config.get("stratification_variable", False) else True,
         collate_fn=collate_fn,
         num_workers=config.get("num_workers", 8),
-        prefetch_factor=config.get("prefetch_factor", 4),
-        persistent_workers=config.get("persistent_workers", True),
-        pin_memory=config.get("pin_memory", True),
+        prefetch_factor=config.get("prefetch_factor", 2),
+        persistent_workers=config.get("persistent_workers", False),
+        pin_memory=config.get("pin_memory", False),
     )
     
     valid_loader = DataLoader(
@@ -124,9 +134,9 @@ def get_data_loaders(features, input_dims, modality_keys, config, data_dir):
         shuffle=False,
         collate_fn=collate_fn,
         num_workers=config.get("num_workers", 8),
-        prefetch_factor=config.get("prefetch_factor", 4),
-        persistent_workers=config.get("persistent_workers", True),
-        pin_memory=config.get("pin_memory", True),
+        prefetch_factor=config.get("prefetch_factor", 2),
+        persistent_workers=config.get("persistent_workers", False),
+        pin_memory=config.get("pin_memory", False),
     )
 
     full_loader = DataLoader(
@@ -135,9 +145,9 @@ def get_data_loaders(features, input_dims, modality_keys, config, data_dir):
         shuffle=True,
         collate_fn=collate_fn,
         num_workers=config.get("num_workers", 8),
-        prefetch_factor=config.get("prefetch_factor", 4),
-        persistent_workers=config.get("persistent_workers", True),
-        pin_memory=config.get("pin_memory", True),
+        prefetch_factor=config.get("prefetch_factor", 2),
+        persistent_workers=config.get("persistent_workers", False),
+        pin_memory=config.get("pin_memory", False),
     )
 
     return train_loader, valid_loader, full_loader
@@ -249,7 +259,7 @@ def run_epoch(loader, model, optimizer, device, is_train, global_step, config):
 def train_loop(features, input_dims, modality_keys, config, data_dir):
     """Full training pipeline including early stopping. Returns best_val_epoch, ckpt_dir, model, and full_loader."""
     # Initialize W&B
-    wandb.init(project="fmri-model", config=config)
+    wandb.init(project="fmri-model", config=config, name=config["run_name"])
     run_id = wandb.run.id
     ckpt_dir = Path("checkpoints") / run_id
     ckpt_dir.mkdir(parents=True, exist_ok=True)

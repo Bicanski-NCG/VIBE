@@ -1,0 +1,12 @@
+paths:
+  features: "/u/danielcs/algonauts/Algonauts-Decoding/features"
+  fmri: "/u/danielcs/algonauts/Algonauts-Decoding/data/fmri"
+  stim: "/u/danielcs/algonauts/Algonauts-Decoding/data/stimuli"
+  checkpoints: "/u/danielcs/algonauts/Algonauts-Decoding/output/checkpoints"
+  normalization_stats: "/u/danielcs/algonauts/Algonauts-Decoding/normalization_stats.pt"
+
+wandb:
+  project: "fmri-model"
+  path: "/u/danielcs/algonauts/Algonauts-Decoding/output/wandb"
+
+device: "auto" # "auto" or device e.g. "cuda:0"

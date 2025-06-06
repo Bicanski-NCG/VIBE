@@ -15,3 +15,5 @@ train:
   hidden_dim: 256
   use_hrf_conv: false
   learn_hrf: false
+  val_name: "life"
+  val_run: "0"

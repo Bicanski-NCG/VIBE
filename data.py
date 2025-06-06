@@ -57,10 +57,11 @@ class FMRI_Dataset(Dataset):
                 with h5py.File(fmri_file, "r") as h5file:
                     for dataset_name in h5file.keys():
                         num_samples = h5file[dataset_name].shape[0]
-                        name_re = re.compile(r"^(?:ses-\d+_task-)(?P<file_name>(?P<name>s\d+|[a-zA-Z]+)[a-zA-Z0-9]+)(?:_run-\d*$)?")
+                        name_re = re.compile(r"^(?:ses-\d+_task-)(?P<file_name>(?P<name>s\d+|[a-zA-Z]+)[a-zA-Z0-9]+)(?:_run-(?P<run>\d*)$)?")
                         match = name_re.match(dataset_name)                            
                         file_name = match.group("file_name")
                         name = match.group("name")
+                        run = match.group("run") if match.group("run") else 1
                         sample = {
                             "subject_id": subject_id,
                             "fmri_file": fmri_file,
@@ -69,6 +70,7 @@ class FMRI_Dataset(Dataset):
                             "is_movie": "movie" in fmri_file.lower(),
                             "file_name": file_name,
                             "name": name,
+                            "run": int(run) - 1,
                         }
                         self.samples.append(sample)
 
@@ -176,13 +178,40 @@ def compute_mean_std(dataset):
     return stats
 
 
-def split_dataset_by_name(dataset, val_name="06", train_noise_std=0.00,
-                          normalize_validation_bold=False):
+def split_dataset_by_name(dataset, val_name="06", val_run="all",
+                          train_noise_std=0.00, normalize_validation_bold=False):
+    """
+    Splits the dataset into training and validation sets based on the `val_name` and `val_run` parameters.
+    If `val_name` is found in the sample name, it is considered a validation sample.
+    If `val_run` is specified, only validation samples from that run will be included.
+    If `val_run` is "all", no filtering is applied.
+
+    Parameters
+    ----------
+    dataset : FMRI_Dataset
+        The dataset to split.
+    val_name : str
+        The substring to match for validation samples. Default is "06".
+    train_noise_std : float
+        Standard deviation of noise to add to training samples. Default is 0.00.
+    normalize_validation_bold : bool
+        Whether to normalize BOLD responses in the validation set. Default is False.
+    filter_run : str
+        If specified, will filter validation samples by this run name.
+        If "all", no filtering is applied. Default is "all".
+    Returns
+    -------
+    train_ds : FMRI_Dataset
+        The training dataset.
+    val_ds : FMRI_Dataset
+        The validation dataset.
+    """
     train_samples, val_samples = [], []
 
     for sample in dataset.samples:
         if val_name.lower() in sample["name"].lower():
-            val_samples.append(sample)
+                if val_run == "all" or str(sample["run"]) == str(val_run):
+                    val_samples.append(sample)
         else:
             train_samples.append(sample)
 

@@ -240,6 +240,15 @@ def run_epoch(loader, model, optimizer, device, is_train, global_step, config):
 
     for batch in loader:
         features = {k: batch[k].to(device) for k in loader.dataset.modalities}
+
+        # ── Modality dropout: randomly zero‑out entire modalities ──────────
+        drop_prob = config.get("modality_dropout_prob", 0.05)  # e.g. 0.15 in params.yaml
+        if is_train and drop_prob > 0:
+            for mod in loader.dataset.modalities:
+                if random.random() < drop_prob:
+                    # Replace with zeros; keeps tensor shape & device
+                    features[mod] = torch.zeros_like(features[mod])
+
         subject_ids = batch["subject_ids"]
         fmri = batch["fmri"].to(device)
         attn_mask = batch["attention_masks"].to(device)
@@ -370,6 +379,11 @@ def train_loop(features, input_dims, modality_keys, config, data_dir):
         )
 
         scheduler.step()
+        if epoch == 1:
+            wandb.define_metric("epoch")
+            for k in ["train_neg_corr", "val_neg_corr",
+                    "train_loss", "val_loss"]:
+                wandb.define_metric(k, step_metric="epoch")
         current_val = val_losses[1]  # negative correlation as primary metric
         print(f"Epoch {epoch}: Train NegCorr = {train_losses[1]:.4f}, Val NegCorr = {current_val:.4f}")
 
@@ -386,6 +400,7 @@ def train_loop(features, input_dims, modality_keys, config, data_dir):
             if patience_counter >= config["early_stop_patience"]:
                 print("⏹️ Early stopping triggered")
                 break
+            
     # ── Generate visual diagnostics on best model ──────────────
     print("📊 Generating visualisations on validation set …")
     model.load_state_dict(torch.load(ckpt_dir / "best_model.pt"))

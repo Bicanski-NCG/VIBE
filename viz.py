@@ -30,7 +30,8 @@ def plot_glass_brain_set(
         title = f"sub-{sid}  |  mean r = {r.mean():.3f}"
         display = plotting.plot_glass_brain(
             statmap, display_mode="lyrz", cmap=cmap, colorbar=True,
-            plot_abs=False, symmetric_cbar=False, title=title, vmax=None
+            plot_abs=False, symmetric_cbar=False, title=title,
+            vmin=-0.1, vmax=0.75
         )
         display._cbar.set_label("Pearson $r$")
         fname = os.path.join(out_dir, f"{prefix}_glass_sub-{sid}.png")
@@ -46,7 +47,7 @@ def plot_glass_brain_set(
         statmap, display_mode="lyrz", cmap=cmap, colorbar=True,
         plot_abs=False, symmetric_cbar=False,
         title=f"group-mean  |  mean r = {group_r.mean():.3f}",
-        vmin=0.0
+        vmin=-0.1, vmax=0.75
     )
     display._cbar.set_label("Pearson $r$")
     fname = os.path.join(out_dir, f"{prefix}_glass_group.png")

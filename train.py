@@ -3,6 +3,8 @@ import yaml
 import random
 import wandb
 from pathlib import Path
+import pickle, gzip
+import glob
 
 import numpy as np
 import pandas as pd
@@ -27,10 +29,13 @@ from viz import (
     load_and_label_atlas,
     voxelwise_pearsonr,
     plot_glass_brain,
-    plot_corr_hist,
+    plot_corr_histogram,
     roi_table,
     plot_glass_bads,
-    plot_time_corr
+    plot_time_correlation,
+    plot_residual_glass,
+    plot_pred_vs_true_scatter,
+    plot_residual_psd
 )
 
 import nibabel as nib
@@ -445,15 +450,13 @@ def train_loop(features, input_dims, modality_keys, config, data_dir):
                 break
             
     # ── Generate visual diagnostics on validation set ──────────────
-    import pickle, gzip
-    import glob
     print("📊 Generating visualisations on validation set …")
     model.load_state_dict(torch.load(ckpt_dir / "best_model.pt"))
     fmri_true, fmri_pred, subj_ids, atlas_paths = collect_predictions(
         valid_loader, model, config["device"]
     )
 
-    # ── Persist validation predictions for later analysis ────────────
+    # Persist validation predictions for later analysis
     pred_path = ckpt_dir / "val_predictions.pkl.gz"
     with gzip.open(pred_path, "wb") as f:
         pickle.dump(
@@ -478,7 +481,7 @@ def train_loop(features, input_dims, modality_keys, config, data_dir):
         plot_glass_brain(r, sid, masker, out_dir=str(ckpt_dir))
 
         # (2) correlation histogram
-        plot_corr_hist(r, sid, out_dir=str(ckpt_dir))
+        plot_corr_histogram(r, sid, out_dir=str(ckpt_dir))
 
         # (3) ROI table and bar chart
         df_roi = roi_table(r, sid, masker, out_dir=str(ckpt_dir))
@@ -493,10 +496,19 @@ def train_loop(features, input_dims, modality_keys, config, data_dir):
 
         # (4) time correlation
         r_t = np.array([pearsonr(true[t], pred[t])[0] for t in range(true.shape[0])])
-        plot_time_corr(r_t, sid, out_dir=str(ckpt_dir))
+        plot_time_correlation(r_t, sid, out_dir=str(ckpt_dir))
 
         # (5) glass-brain of worst timepoints
         plot_glass_bads(true, pred, sid, masker, out_dir=str(ckpt_dir), pct_bads=config.get("pct_bads", 0.1))
+
+        # (6) residual glass-brain
+        plot_residual_glass(true, pred, sid, masker, out_dir=str(ckpt_dir))
+
+        # (7) scatter
+        plot_pred_vs_true_scatter(true, pred, sid, out_dir=str(ckpt_dir))
+
+        # (8) PSD of residuals
+        plot_residual_psd(true, pred, sid, out_dir=str(ckpt_dir), fs=1/1.49)
 
     # Group visual diagnostics
     group_mean_r = np.mean([voxelwise_pearsonr(true, pred) for true, pred in zip(fmri_true, fmri_pred)], axis=0)
@@ -506,7 +518,7 @@ def train_loop(features, input_dims, modality_keys, config, data_dir):
     plot_glass_brain(group_mean_r, "group", group_masker, out_dir=str(ckpt_dir))
 
     # (2) group correlation histogram
-    plot_corr_hist(group_mean_r, "group", out_dir=str(ckpt_dir))
+    plot_corr_histogram(group_mean_r, "group", out_dir=str(ckpt_dir))
 
     # (3) group ROI bar chart
     df_group_roi = roi_table(group_mean_r, "group", group_masker, out_dir=str(ckpt_dir))
@@ -525,15 +537,39 @@ def train_loop(features, input_dims, modality_keys, config, data_dir):
                 for t in range(true.shape[0])])
         for true, pred in zip(fmri_true, fmri_pred)
     ]
-
-    # ---- pad ragged to rectangle, average with NaNs ----------------------
     max_T   = max(arr.size for arr in r_t_list)
     r_t_mat = np.full((len(r_t_list), max_T), np.nan)
     for i, arr in enumerate(r_t_list):
         r_t_mat[i, :arr.size] = arr
 
     group_r_t = np.nanmean(r_t_mat, axis=0)   # (max_T,)
-    plot_time_corr(group_r_t, "group", out_dir=str(ckpt_dir))
+    plot_time_correlation(group_r_t, "group", out_dir=str(ckpt_dir))
+
+
+    # (5) group residual glass-brain
+    group_res_true = np.concatenate([t for t in fmri_true], 0)
+    group_res_pred = np.concatenate([p for p in fmri_pred], 0)
+    plot_residual_glass(group_res_true, group_res_pred, "group", group_masker, out_dir=str(ckpt_dir))
+
+    # (6) group glass-brain of worst TRs (“bads”)
+    plot_glass_bads(
+        group_res_true,
+        group_res_pred,
+        "group",
+        group_masker,
+        out_dir=str(ckpt_dir),
+        pct_bads=config.get("pct_bads", 0.10)
+    )
+
+
+    # (7) group scatter
+    plot_pred_vs_true_scatter(
+        group_res_true, group_res_pred, "group", out_dir=str(ckpt_dir), max_points=config.get("max_scatter_points", 50000)
+    )
+
+    # (8) group PSD of residuals
+    plot_residual_psd(group_res_true, group_res_pred, "group", out_dir=str(ckpt_dir), fs=1/1.49)
+
 
     # Log every png
     for png in glob.glob(str(ckpt_dir / "*.png")):

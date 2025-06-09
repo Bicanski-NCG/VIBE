@@ -165,7 +165,8 @@ def plot_glass_brain(r: np.ndarray,
         symmetric_cbar=False, plot_abs=False,
         colorbar=True, title=title
     )
-    disp._cbar.set_label("Pearson $r$", rotation=90, labelpad=12, fontsize=12)
+    cbar = disp._cbar
+    cbar.set_label("Pearson $r$", rotation=90, labelpad=12, fontsize=12)
     name = f"{filename or 'glass_brain'}_{subj_id}.png"
     path = out_dir / name
     disp.savefig(path, dpi=150)
@@ -264,11 +265,12 @@ def plot_residual_glass(y_true: np.ndarray,
     out_dir = ensure_dir(out_dir)
     nii = masker.inverse_transform(voxel_err.astype(np.float32))
     disp = plotting.plot_glass_brain(
-        nii, display_mode="lyrz", cmap=_RESIDUAL_CMAP,
-        symmetric_cbar=True, vmin=-vmax, vmax=vmax,
+        nii, display_mode="lyrz", cmap=_RESIDUAL_CMAP, colorbar=True,
+        symmetric_cbar=True, vmin=-vmax, vmax=vmax, plot_abs=False,
         title=f"Residual {metric} – {subj_id}"
     )
-    disp._cbar.set_label("ΔBOLD (pred − true)", rotation=90, labelpad=12, fontsize=12)
+    cbar = disp._cbar
+    cbar.set_label("ΔBOLD (pred − true)", rotation=90, labelpad=12, fontsize=12)
     path = out_dir / f"glass_residual_{subj_id}.png"
     disp.savefig(path, dpi=150)
     disp.close()

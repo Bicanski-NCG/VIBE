@@ -1,139 +1,128 @@
-import os, pathlib, itertools
+import gzip, pickle, os
+from pathlib import Path
 import numpy as np
-import matplotlib.pyplot as plt
-from nilearn import plotting
-from scipy.stats import pearsonr
+from nilearn import plotting, datasets
 from nilearn.maskers import NiftiLabelsMasker
+from scipy.stats import pearsonr
+import matplotlib.pyplot as plt
+import pandas as pd
 
+def load_and_label_atlas(path):
+    atlas_data = datasets.fetch_atlas_schaefer_2018(n_rois=1000)
+    atlas_data.labels = np.insert(atlas_data.labels, 0, "7Networks_NA_Background_0")
+    schaefer_labels = np.array([b.decode('utf-8').split('_')[2] for b in atlas_data.labels])
+    atlas_masker = NiftiLabelsMasker(labels_img=path, labels=list(schaefer_labels))
+    atlas_masker.fit()
+    return atlas_masker
 
-# ----------------------------------------------------------------------
-# 1. Glass-brain plots  (per-subject + group mean)
-# ----------------------------------------------------------------------
-def plot_glass_brain_set(
-    fmri_true, fmri_pred,                 # list of (T,V) arrays, one per subject
-    subj_ids,                             # ["01","02",...]
-    atlas_paths,                          # list of .nii.gz label atlases per subj
-    out_dir="plots", prefix="val",
-    cmap="hot_r",
-):
-    pathlib.Path(out_dir).mkdir(parents=True, exist_ok=True)
-    group_r = []
+def voxelwise_pearsonr(fmri_val, fmri_val_pred):
+    ### Correlate recorded and predicted fMRI responses ###
+    encoding_accuracy = np.zeros((fmri_val.shape[1]), dtype=np.float32)
+    for p in range(len(encoding_accuracy)):
+        encoding_accuracy[p] = pearsonr(fmri_val[:, p],
+            fmri_val_pred[:, p])[0]
+    return encoding_accuracy
 
-    for true, pred, sid, atlas_file in zip(fmri_true, fmri_pred, subj_ids, atlas_paths):
-        r = np.array([pearsonr(true[:, v], pred[:, v])[0]
-                      for v in range(true.shape[1])], dtype=np.float32)
-        group_r.append(r)
+def plot_glass_brain(r, subj_id, masker, out_dir="plots", filename=None):
 
-        masker = NiftiLabelsMasker(labels_img=atlas_file).fit()
-        statmap = masker.inverse_transform(r)
+    mean_r = np.round(np.mean(r), 3)
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-        title = f"sub-{sid}  |  mean r = {r.mean():.3f}"
-        display = plotting.plot_glass_brain(
-            statmap, display_mode="lyrz", cmap=cmap, colorbar=True,
-            plot_abs=False, symmetric_cbar=False, title=title,
-            vmin=-0.1, vmax=0.75
-        )
-        display._cbar.set_label("Pearson $r$")
-        fname = os.path.join(out_dir, f"{prefix}_glass_sub-{sid}.png")
-        display.savefig(fname, dpi=150)
-        display.close()
+    ### Map the prediction accuracy onto a 3D brain atlas for plotting ###
 
-    # group mean
-    group_r = np.stack(group_r).mean(axis=0)
-    masker = NiftiLabelsMasker(labels_img=atlas_paths[0]).fit()
-    statmap = masker.inverse_transform(group_r)
+    r_nii = masker.inverse_transform(r)
 
+    ### Plot the encoding accuracy ###
+    title = f"Encoding accuracy, {subj_id}, mean accuracy: " + str(mean_r)
     display = plotting.plot_glass_brain(
-        statmap, display_mode="lyrz", cmap=cmap, colorbar=True,
-        plot_abs=False, symmetric_cbar=False,
-        title=f"group-mean  |  mean r = {group_r.mean():.3f}",
-        vmin=-0.1, vmax=0.75
+        r_nii,
+        display_mode="lyrz",
+        cmap='hot_r',
+        colorbar=True,
+        plot_abs=False,
+        symmetric_cbar=False,
+        title=title
     )
-    display._cbar.set_label("Pearson $r$")
-    fname = os.path.join(out_dir, f"{prefix}_glass_group.png")
-    display.savefig(fname, dpi=150)
+    colorbar = display._cbar
+    colorbar.set_label("Pearson's $r$", rotation=90, labelpad=12, fontsize=12)
+    if filename is not None:
+        outfile = out_dir / f"{filename}_{subj_id}.png"
+    else:
+        outfile = out_dir / f"glass_brain_{subj_id}.png"
+    display.savefig(outfile, dpi=150)
     display.close()
+    return outfile
 
-
-# ----------------------------------------------------------------------
-# 2. Histogram(s) of voxelwise correlations
-# ----------------------------------------------------------------------
-def plot_corr_hist_set(
-    r_per_subj,             # list of 1-D arrays (V,)
-    subj_ids,
-    out_dir="plots", prefix="val",
-    nbins=60,
-):
-    pathlib.Path(out_dir).mkdir(parents=True, exist_ok=True)
-
-    # per-subject
-    for r, sid in zip(r_per_subj, subj_ids):
-        fig, ax = plt.subplots(figsize=(5, 3))
-        ax.hist(r, bins=nbins, edgecolor="k", alpha=0.75)
-        ax.set_xlabel("Pearson $r$")
-        ax.set_ylabel("Voxel count")
-        ax.set_title(f"sub-{sid}")
-        fig.tight_layout()
-        fig.savefig(os.path.join(out_dir, f"{prefix}_hist_sub-{sid}.png"), dpi=150)
-        plt.close(fig)
-
-    # group
-    r_all = np.concatenate(r_per_subj)
-    fig, ax = plt.subplots(figsize=(5, 3))
-    ax.hist(r_all, bins=nbins, edgecolor="k", alpha=0.9, color="slateblue")
+def plot_corr_hist(r, subj_id, out_dir="plots"):
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.hist(r, bins=60, edgecolor="k", alpha=0.9, color='blue')
     ax.set_xlabel("Pearson $r$")
     ax.set_ylabel("Voxel count")
-    ax.set_title("group mean")
+    ax.set_title(subj_id)
     fig.tight_layout()
-    fig.savefig(os.path.join(out_dir, f"{prefix}_hist_group.png"), dpi=150)
+    outfile = out_dir / f"corr_hist_{subj_id}.png"
+    fig.savefig(outfile, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return outfile
+
+def roi_table(r, subj_id, masker, out_dir="plots"):
+    """
+    Save a CSV of mean voxel-wise r per Schaefer ROI and return the DataFrame.
+    """
+
+    labels_array = np.array(masker.labels[1:])           # skip background
+    roi_masks = {name: np.where(labels_array == name)[0]
+                 for name in np.unique(labels_array)}
+
+    rows = [{"label": name, "mean_r": np.mean(r[idxs])}
+            for name, idxs in roi_masks.items()]
+    df = pd.DataFrame(rows)
+    df = df.sort_values("mean_r", ascending=False)
+
+    if out_dir is not None:
+        out_dir = Path(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        csv_file = out_dir / f"roi_table_{subj_id}.csv"
+        df.to_csv(csv_file, index=True)
+
+    return df
+
+def plot_time_corr(r_t, subj_id, out_dir="plots"):
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    
+    window = 100
+    smoothed = np.convolve(r_t, np.ones(window)/window, mode="same")
+    k = max(1, int(0.1 * len(r_t)))
+    worst_idx = np.argsort(smoothed)[:k]
+    
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(r_t, lw=0.1, linestyle="-", color="b", alpha=0.3)
+    ax.plot(smoothed, color="b", lw=0.3)
+    ax.set_ylabel("Pearson's r")
+    ax.set_xlabel("Timepoint (TR)")
+    ax.set_title(f"Smoothed correlation over time {subj_id}")
+    ax.vlines(np.where(np.isnan(r_t))[0], ymin=np.nanmin(r_t), ymax=np.nanmax(r_t), color='r', lw=0.1)
+    ax.scatter(worst_idx, smoothed[worst_idx], color="red", label="worst 5 %")
+
+    outfile = out_dir / f"time_corr_{subj_id}.png"
+    fig.savefig(outfile, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
-# ----------------------------------------------------------------------
-# 3. Time × voxel imshow with correlation colour-bar
-# ----------------------------------------------------------------------
-def plot_time_voxel_imshow(
-    true, pred,            # (T, V) ndarray for ONE subject
-    subj_id, stim_tag,
-    out_dir="plots", prefix="val",
-    vmax=None,
-):
-    pathlib.Path(out_dir).mkdir(parents=True, exist_ok=True)
-    T, V = true.shape
-    r = np.array([pearsonr(true[:, v], pred[:, v])[0] for v in range(V)])
-
-    # Optionally reorder voxels by r
-    order = np.argsort(-r)          # descending correlation
-    true_ord = true[:, order]
-    pred_ord = pred[:, order]
-    r_ord = r[order]
-
-    vmax = vmax or np.nanpercentile(np.abs(np.concatenate([true_ord, pred_ord])), 99)
-
-    fig = plt.figure(figsize=(10, 5))
-    gs = fig.add_gridspec(1, 3, width_ratios=[5, 5, 0.3], wspace=0.05)
-
-    ax0 = fig.add_subplot(gs[0])
-    im0 = ax0.imshow(true_ord.T, aspect="auto", vmin=-vmax, vmax=vmax, cmap="coolwarm")
-    ax0.set_title("Ground truth")
-    ax0.set_ylabel("voxels  (sorted by $r$)")
-    ax0.set_xlabel("time")
-
-    ax1 = fig.add_subplot(gs[1])
-    im1 = ax1.imshow(pred_ord.T, aspect="auto", vmin=-vmax, vmax=vmax, cmap="coolwarm")
-    ax1.set_title("Prediction")
-    ax1.set_yticks([]); ax1.set_xlabel("time")
-
-    # side strip: voxel-wise r
-    ax2 = fig.add_subplot(gs[2])
-    sc = ax2.scatter(np.zeros_like(r_ord), np.arange(V), c=r_ord, cmap="viridis",
-                     vmin=0, vmax=1, s=4)
-    ax2.set_ylim(-0.5, V-0.5)
-    ax2.set_xticks([]); ax2.set_yticks([])
-    fig.colorbar(sc, ax=ax2, fraction=0.8, label="Pearson $r$")
-
-    fig.suptitle(f"sub-{subj_id} | {stim_tag}")
-    fname = os.path.join(out_dir, f"{prefix}_imshow_sub-{subj_id}.png")
-    fig.savefig(fname, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    return fname
+def plot_glass_bads(fmri_pred, fmri_true, subj_id, masker, out_dir="plots", pct_bads=.1):
+    r_t = np.array([pearsonr(fmri_pred[t], fmri_true[t])[0] for t in range(fmri_true.shape[0])])
+    
+    window = 100
+    smoothed = np.convolve(r_t, np.ones(window)/window, mode="same")
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    k = max(1, int(pct_bads * len(r_t)))
+    worst_idx = np.argsort(smoothed)[:k]
+    
+    r = voxelwise_pearsonr(fmri_pred[worst_idx], fmri_true[worst_idx])
+    
+    plot_glass_brain(r, subj_id, masker, out_dir=out_dir, filename="glass_bads")

@@ -59,11 +59,12 @@ def collect_predictions(loader, model, device):
     with torch.no_grad():
         for batch in loader:
             subj_ids = batch["subject_ids"]      # tensor shape (B,)
+            run_ids  = batch["run_ids"]          # tensor shape (B,)
             fmri     = batch["fmri"].to(device)
             attn     = batch["attention_masks"].to(device)
             feats    = {k: batch[k].to(device) for k in loader.dataset.modalities}
 
-            pred = model(feats, subj_ids, attn)
+            pred = model(feats, subj_ids, run_ids, attn)
 
             for i, sid in enumerate(subj_ids):
                 sid = sid_map[sid]

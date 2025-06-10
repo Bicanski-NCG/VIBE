@@ -3,12 +3,18 @@ import yaml
 import random
 import wandb
 from pathlib import Path
+import pickle, gzip
+import glob
 
 import numpy as np
+import pandas as pd
 import torch
 from torch import nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
+
+from collections import defaultdict
+from scipy.stats import pearsonr
 
 from data import FMRI_Dataset, split_dataset_by_name, collate_fn, make_group_weights
 from model import FMRIModel
@@ -18,6 +24,62 @@ from losses import (
     roi_similarity_loss
 )
 from utils import save_initial_state, load_initial_state, set_seed, log_model_params
+
+from viz import (
+    load_and_label_atlas,
+    voxelwise_pearsonr,
+    plot_glass_brain,
+    plot_corr_histogram,
+    roi_table,
+    plot_glass_bads,
+    plot_time_correlation,
+    plot_residual_glass,
+    plot_pred_vs_true_scatter,
+    plot_residual_psd
+)
+
+import nibabel as nib
+from nilearn.maskers import NiftiLabelsMasker
+
+
+def collect_predictions(loader, model, device):
+    """
+    Run model over `loader` (no grad) and return:
+        fmri_true  : list of (T, V) arrays per subject in order
+        fmri_pred  : list of (T, V) arrays per subject in same order
+        subj_order : list of subject IDs as strings ("01", "02", ...)
+        atlas_paths: list of atlas paths (looked up from dataset samples)
+    Assumes each batch contains a single subject only (Algonauts starter).
+    """
+    model.eval()
+    subj_to_true = defaultdict(list)
+    subj_to_pred = defaultdict(list)
+    subj_to_atlas = {}
+    sid_map = {v: k for k, v in loader.dataset.subject_name_id_dict.items()}
+    with torch.no_grad():
+        for batch in loader:
+            subj_ids = batch["subject_ids"]      # tensor shape (B,)
+            fmri     = batch["fmri"].to(device)
+            attn     = batch["attention_masks"].to(device)
+            feats    = {k: batch[k].to(device) for k in loader.dataset.modalities}
+
+            pred = model(feats, subj_ids, attn)
+
+            for i, sid in enumerate(subj_ids):
+                sid = sid_map[sid]
+                subj_to_true[sid].append(fmri[i].cpu().numpy())
+                subj_to_pred[sid].append(pred[i].cpu().numpy())
+                if sid not in subj_to_atlas:
+                    atlas_path = loader.dataset.samples[0]["subject_atlas"].format(subject=sid)
+                    subj_to_atlas[sid] = atlas_path
+
+    fmri_true, fmri_pred, subj_order, atlas_paths = [], [], [], []
+    for sid in sorted(subj_to_true.keys()):
+        fmri_true.append(np.concatenate(subj_to_true[sid], axis=0))
+        fmri_pred.append(np.concatenate(subj_to_pred[sid], axis=0))
+        subj_order.append(sid)
+        atlas_paths.append(subj_to_atlas[sid])
+    return fmri_true, fmri_pred, subj_order, atlas_paths
 
 
 def load_config():
@@ -197,6 +259,15 @@ def run_epoch(loader, model, optimizer, device, is_train, global_step, config):
 
     for batch in loader:
         features = {k: batch[k].to(device) for k in loader.dataset.modalities}
+
+        # ── Modality dropout: randomly zero‑out entire modalities ──────────
+        drop_prob = config.get("modality_dropout_prob", 0.00)  # e.g. 0.15 in params.yaml
+        if is_train and drop_prob > 0:
+            for mod in loader.dataset.modalities:
+                if random.random() < drop_prob:
+                    # Replace with zeros; keeps tensor shape & device
+                    features[mod] = torch.zeros_like(features[mod])
+
         subject_ids = batch["subject_ids"]
         run_ids = batch["run_ids"]
         fmri = batch["fmri"].to(device)
@@ -261,6 +332,15 @@ def train_loop(features, input_dims, modality_keys, config, data_dir):
     """Full training pipeline including early stopping. Returns best_val_epoch, ckpt_dir, model, and full_loader."""
     # Initialize W&B
     wandb.init(project="fmri-model", config=config, name=config["run_name"])
+    
+    # Define x-axis metrics for W&B
+    wandb.define_metric("epoch")
+    wandb.define_metric("retrain_epoch")
+
+    # Summary metrics
+    wandb.define_metric("val/loss", step_metric="epoch", summary="min")
+    wandb.define_metric("val/neg_corr", step_metric="epoch", summary="min")
+
     run_id = wandb.run.id
     ckpt_dir = Path("checkpoints") / run_id
     ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -309,23 +389,48 @@ def train_loop(features, input_dims, modality_keys, config, data_dir):
 
         wandb.log(
             {
+                # TRAIN
                 "epoch": epoch,
-                "train_loss": train_losses[0],
-                "val_loss": val_losses[0],
-                "train_neg_corr": train_losses[1],
-                "val_neg_corr": val_losses[1],
-                "train_sample": train_losses[2],
-                "val_sample": val_losses[2],
-                "train_roi": train_losses[3],
-                "val_roi": val_losses[3],
-                "train_mse": train_losses[4],
-                "val_mse": val_losses[4],
-                "lr": optimizer.param_groups[0]["lr"]
-                if len(optimizer.param_groups) == 1
-                else optimizer.param_groups[1]["lr"],
+                "train/loss": train_losses[0],
+                "train/neg_corr": train_losses[1],
+                "train/sample": train_losses[2],
+                "train/roi": train_losses[3],
+                "train/mse": train_losses[4],
+
+                # VAL
+                "val/loss":  val_losses[0],
+                "val/neg_corr": val_losses[1],
+                "val/sample": val_losses[2],
+                "val/roi": val_losses[3],
+                "val/mse": val_losses[4],
+
+                # shared LR
+                "train/lr": optimizer.param_groups[0]["lr"]
+                    if len(optimizer.param_groups) == 1
+                    else optimizer.param_groups[1]["lr"],
             },
             step=global_step,
         )
+
+        # ── Optional per‑ROI validation correlations ───────────────────────
+        # Set roi_log_interval in params.yaml (e.g. 5) to control frequency; 0 disables
+        roi_interval = config.get("roi_log_interval", 0)
+        if roi_interval and epoch % roi_interval == 0:
+            with torch.no_grad():
+                fmri_true, fmri_pred, subj_ids, atlas_paths = collect_predictions(
+                    valid_loader, model, config["device"]
+                )
+                # Group‑level mean voxel‑wise r
+                group_mean_r = np.mean(
+                    [voxelwise_pearsonr(t, p) for t, p in zip(fmri_true, fmri_pred)],
+                    axis=0,
+                )
+                group_masker = load_and_label_atlas(atlas_paths[0])
+                df_group_roi = roi_table(group_mean_r, "group", group_masker, out_dir=None)
+                # Flatten into a wandb metrics dict: roi/ROI_NAME : mean_r
+                roi_metrics = {f"roi/{row['label']}": row["mean_r"] for _, row in df_group_roi.iterrows()}
+                wandb.log(roi_metrics, step=global_step)
+
 
         scheduler.step()
         current_val = val_losses[1]  # negative correlation as primary metric
@@ -344,6 +449,132 @@ def train_loop(features, input_dims, modality_keys, config, data_dir):
             if patience_counter >= config["early_stop_patience"]:
                 print("⏹️ Early stopping triggered")
                 break
+            
+    # ── Generate visual diagnostics on validation set ──────────────
+    print("📊 Generating visualisations on validation set …")
+    model.load_state_dict(torch.load(ckpt_dir / "best_model.pt"))
+    fmri_true, fmri_pred, subj_ids, atlas_paths = collect_predictions(
+        valid_loader, model, config["device"]
+    )
+
+    # Persist validation predictions for later analysis
+    pred_path = ckpt_dir / "val_predictions.pkl.gz"
+    with gzip.open(pred_path, "wb") as f:
+        pickle.dump(
+            {
+                "subjects": subj_ids,
+                "fmri_true": fmri_true,   # lists of (T, V) ndarrays
+                "fmri_pred": fmri_pred,
+            },
+            f,
+            protocol=pickle.HIGHEST_PROTOCOL,
+        )
+
+    # Per subject visual diagnostics
+    for true, pred, sid, atlas_path in zip(fmri_true, fmri_pred, subj_ids, atlas_paths):
+        # 1 – voxel-wise correlations
+        r = voxelwise_pearsonr(true, pred)
+
+        # 2 - load atlas and create masker
+        masker = load_and_label_atlas(atlas_path)
+
+        # (1) glass-brain
+        plot_glass_brain(r, sid, masker, out_dir=str(ckpt_dir))
+
+        # (2) correlation histogram
+        plot_corr_histogram(r, sid, out_dir=str(ckpt_dir))
+
+        # (3) ROI table and bar chart
+        df_roi = roi_table(r, sid, masker, out_dir=str(ckpt_dir))
+        table_roi = wandb.Table(dataframe=df_roi.astype({"mean_r": float}))
+        bar_chart = wandb.plot.bar(
+            table_roi,
+            "label",      # x‑axis
+            "mean_r",     # y‑axis
+            title=f"ROI mean Pearson r – {sid}",
+        )
+        wandb.log({f"viz/roi_bar_{sid}": bar_chart})
+
+        # (4) time correlation
+        r_t = np.array([pearsonr(true[t], pred[t])[0] for t in range(true.shape[0])])
+        plot_time_correlation(r_t, sid, out_dir=str(ckpt_dir))
+
+        # (5) glass-brain of worst timepoints
+        plot_glass_bads(true, pred, sid, masker, out_dir=str(ckpt_dir), pct_bads=config.get("pct_bads", 0.1))
+
+        # (6) residual glass-brain
+        plot_residual_glass(true, pred, sid, masker, out_dir=str(ckpt_dir))
+
+        # (7) scatter
+        plot_pred_vs_true_scatter(true, pred, sid, out_dir=str(ckpt_dir))
+
+        # (8) PSD of residuals
+        plot_residual_psd(true, pred, sid, out_dir=str(ckpt_dir), fs=1/1.49)
+
+    # Group visual diagnostics
+    group_mean_r = np.mean([voxelwise_pearsonr(true, pred) for true, pred in zip(fmri_true, fmri_pred)], axis=0)
+    group_masker = load_and_label_atlas(atlas_paths[0])  # use first atlas for group
+
+    # (1) group glass-brain
+    plot_glass_brain(group_mean_r, "group", group_masker, out_dir=str(ckpt_dir))
+
+    # (2) group correlation histogram
+    plot_corr_histogram(group_mean_r, "group", out_dir=str(ckpt_dir))
+
+    # (3) group ROI bar chart
+    df_group_roi = roi_table(group_mean_r, "group", group_masker, out_dir=str(ckpt_dir))
+    table_roi = wandb.Table(dataframe=df_group_roi.astype({"mean_r": float}))
+    bar_chart = wandb.plot.bar(
+        table_roi,
+        "label",       # x‑axis
+        "mean_r",      # y‑axis
+        title="Group ROI mean Pearson r",
+    )
+    wandb.log({"viz/roi_bar_group": bar_chart})
+
+    # (4) group time correlation
+    r_t_list = [
+        np.array([pearsonr(pred[t], true[t])[0]
+                for t in range(true.shape[0])])
+        for true, pred in zip(fmri_true, fmri_pred)
+    ]
+    max_T   = max(arr.size for arr in r_t_list)
+    r_t_mat = np.full((len(r_t_list), max_T), np.nan)
+    for i, arr in enumerate(r_t_list):
+        r_t_mat[i, :arr.size] = arr
+
+    group_r_t = np.nanmean(r_t_mat, axis=0)   # (max_T,)
+    plot_time_correlation(group_r_t, "group", out_dir=str(ckpt_dir))
+
+
+    # (5) group residual glass-brain
+    group_res_true = np.concatenate([t for t in fmri_true], 0)
+    group_res_pred = np.concatenate([p for p in fmri_pred], 0)
+    plot_residual_glass(group_res_true, group_res_pred, "group", group_masker, out_dir=str(ckpt_dir))
+
+    # (6) group glass-brain of worst TRs (“bads”)
+    plot_glass_bads(
+        group_res_true,
+        group_res_pred,
+        "group",
+        group_masker,
+        out_dir=str(ckpt_dir),
+        pct_bads=config.get("pct_bads", 0.10)
+    )
+
+
+    # (7) group scatter
+    plot_pred_vs_true_scatter(
+        group_res_true, group_res_pred, "group", out_dir=str(ckpt_dir), max_points=config.get("max_scatter_points", 50000)
+    )
+
+    # (8) group PSD of residuals
+    plot_residual_psd(group_res_true, group_res_pred, "group", out_dir=str(ckpt_dir), fs=1/1.49)
+
+
+    # Log every png
+    for png in glob.glob(str(ckpt_dir / "*.png")):
+        wandb.log({f"viz/{Path(png).name}": wandb.Image(png)})
 
     wandb.run.summary["best_val_pearson"] = best_val_loss
     return best_val_epoch, ckpt_dir, model, full_loader, global_step
@@ -375,14 +606,14 @@ def retrain_full(model, full_loader, config, best_val_epoch, ckpt_dir, start_ste
         wandb.log(
             {
                 "retrain_epoch": epoch,
-                "full_loss": full_losses[0],
-                "full_neg_corr": full_losses[1],
-                "full_sample": full_losses[2],
-                "full_roi": full_losses[3],
-                "full_mse": full_losses[4],
-                "lr": optimizer.param_groups[0]["lr"]
-                if len(optimizer.param_groups) == 1
-                else optimizer.param_groups[1]["lr"],
+                "full/loss": full_losses[0],
+                "full/neg_corr": full_losses[1],
+                "full/sample": full_losses[2],
+                "full/roi": full_losses[3],
+                "full/mse": full_losses[4],
+                "full/lr": optimizer.param_groups[0]["lr"]
+                    if len(optimizer.param_groups) == 1
+                    else optimizer.param_groups[1]["lr"],
             },
             step=global_step,
         )

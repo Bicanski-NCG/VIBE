@@ -17,3 +17,4 @@ train:
   learn_hrf: false
   val_name: "life"
   val_run: "0"
+  roi_log_interval: 1

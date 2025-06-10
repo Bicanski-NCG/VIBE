@@ -48,12 +48,22 @@ class FMRI_Dataset(Dataset):
             self.samples = samples
         else:
             self.fmri_files = sorted(
-                glob.glob(os.path.join(root_folder_fmri, "sub-0?", "func", "*.h5"))            )
+                glob.glob(os.path.join(root_folder_fmri, "sub-0?", "func", "*.h5")))
             self.samples = []
             for fmri_file in self.fmri_files:
                 subject_id = os.path.basename(
                     os.path.dirname(os.path.dirname(fmri_file))
                 )
+                subject_atlas = glob.glob(
+                    os.path.join(os.path.dirname(os.path.dirname(fmri_file)), "atlas","*.nii.gz")
+                )
+                if not subject_atlas:
+                    raise FileNotFoundError(
+                        f"No atlas found for subject {subject_id} in {fmri_file}"
+                    )
+                else:
+                    subject_atlas = subject_atlas[0]
+                
                 with h5py.File(fmri_file, "r") as h5file:
                     for dataset_name in h5file.keys():
                         num_samples = h5file[dataset_name].shape[0]
@@ -66,6 +76,7 @@ class FMRI_Dataset(Dataset):
                         sample = {
                             "subject_id": subject_id,
                             "fmri_file": fmri_file,
+                            "subject_atlas": subject_atlas,
                             "dataset_name": dataset_name,
                             "num_samples": num_samples,
                             "is_movie": "movie" in fmri_file.lower(),

@@ -1,0 +1,31 @@
+[project]
+name = "omni-algonauts"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = [
+    "accelerate>=1.6.0",
+    "bitsandbytes>=0.45.5",
+    "black>=25.1.0",
+    "datalad>=1.1.5",
+    "datalad-installer>=1.1.1",
+    "editables>=0.5",
+    "flash-attn>=2.7.4.post1",
+    "hatching>=0.0.1",
+    "jupyter>=1.1.1",
+    "moviepy>=2.1.2",
+    "numpy>=2.2.5",
+    "opencv-python>=4.11.0.86",
+    "pytorchvideo>=0.1.5",
+    "qwen-omni-utils",
+    "soundfile>=0.13.1",
+    "torchcodec>=0.3.0",
+    "torchvision>=0.22.0",
+    "transformers",
+]
+
+[tool.uv.sources]
+transformers = { git = "https://github.com/huggingface/transformers", rev = "v4.51.3-Qwen2.5-Omni-preview" }
+qwen-omni-utils = { git = "https://github.com/QwenLM/Qwen2.5-Omni.git", subdirectory = "qwen-omni-utils" }

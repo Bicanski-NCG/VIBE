@@ -134,14 +134,16 @@ def load_config():
 
     # Load training hyperparameters
     with open(args.params, "r") as f:
-        params = yaml.safe_load(f)
-        train_params = params["train"]
+        config = yaml.safe_load(f)
 
     # Log the chosen seed in the config for W&B metadata
-    train_params["seed"] = chosen_seed
-    train_params["run_name"] = args.name
+    config["seed"] = chosen_seed
+    config["run_name"] = args.name
 
-    return features, input_dims, modality_keys, train_params, data_dir
+    # Add modalities to WandB config
+    config["modalities"] = modality_keys
+
+    return features, input_dims, modality_keys, config, data_dir
 
 
 def get_data_loaders(features, input_dims, modality_keys, config, data_dir):
@@ -221,13 +223,29 @@ def build_model(input_dims, config, device):
     """Instantiate the FMRIModel and move to device."""
     model = FMRIModel(
         input_dims,
-        1000,
-        fuse_mode=config["fuse_mode"],
-        hidden_dim=config["hidden_dim"],
-        subject_count=4,
-        mask_prob=config.get("mask_prob", 0.2),
+        config.get("output_dim", 1000),
+        # fusion-stage hyper-params
+        fusion_hidden_dim=config.get("fusion_hidden_dim", 256),
+        fusion_layers=config.get("fusion_layers", 1),
+        fusion_heads=config.get("fusion_heads", 4),
+        fusion_dropout=config.get("fusion_dropout", 0.3),
+        subject_dropout_prob=config.get("subject_dropout_prob", 0.0),
+        use_fusion_transformer=config.get("use_fusion_transformer", True),
+        proj_layers=config.get("proj_layers", 1),
+        fuse_mode=config.get("fuse_mode", "concat"),
+        subject_count=config.get("subject_count", 4),
+        # temporal predictor hyper-params
+        pred_layers=config.get("pred_layers", 3),
+        pred_heads=config.get("pred_heads", 8),
+        pred_dropout=config.get("pred_dropout", 0.3),
+        rope_pct=config.get("rope_pct", 1.0),
+        # HRF-related
         use_hrf_conv=config.get("use_hrf_conv", False),
         learn_hrf=config.get("learn_hrf", False),
+        hrf_size=config.get("hrf_size", 8),
+        tr_sec=config.get("tr_sec", 1.49),
+        # training
+        mask_prob=config.get("mask_prob", 0.2),
     )
     model.to(device)
     return model
@@ -349,8 +367,6 @@ def run_epoch(loader, model, optimizer, device, is_train, global_step, config):
 
 def train_loop(features, input_dims, modality_keys, config, data_dir):
     """Full training pipeline including early stopping. Returns best_val_epoch, ckpt_dir, model, and full_loader."""
-    # Initialize W&B
-    wandb.init(project="fmri-model", config=config, name=config["run_name"])
     
     # Define x-axis metrics for W&B
     wandb.define_metric("epoch")
@@ -646,11 +662,24 @@ def retrain_full(model, full_loader, config, best_val_epoch, ckpt_dir, start_ste
 
 
 def main():
-    features, input_dims, modality_keys, train_params, data_dir = load_config()
+
+    # Load configuration files and set random seed
+    features, input_dims, modality_keys, config, data_dir = load_config()
+
+    # Initialize W&B run
+    wandb.init(project="fmri-model", config=config, name=config["run_name"])
+
+    # If running a W&B sweep, wandb.config contains overridden hyperparameters.
+    # Merge them back into our local config dict so later code picks them up.
+    config = dict(wandb.config)
+
+    # Train and validate the model
     best_val_epoch, ckpt_dir, model, full_loader, final_step = train_loop(
-        features, input_dims, modality_keys, train_params, data_dir
+        features, input_dims, modality_keys, config, data_dir
     )
-    retrain_full(model, full_loader, train_params, best_val_epoch, ckpt_dir, final_step)
+
+    # Retrain the model on the full dataset for the best validation epoch
+    retrain_full(model, full_loader, config, best_val_epoch, ckpt_dir, final_step)
 
 
 if __name__ == "__main__":

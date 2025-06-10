@@ -184,50 +184,101 @@ class PredictionLSTM(nn.Module):
 class FMRIModel(nn.Module):
     def __init__(
         self,
-        input_dims,  # dict like {"audio": 128, "video_clip": 512, ...}
+        input_dims,
         output_dim,
-        subject_count=4,
-        hidden_dim=256,
-        mask_prob=0.2,
+        *,
+        # fusion‑stage hyper‑params
+        fusion_hidden_dim=256,
+        fusion_layers=1,
+        fusion_heads=4,
+        fusion_dropout=0.3,
+        subject_dropout_prob=0.0,
+        use_fusion_transformer=True,
+        proj_layers=1,
         fuse_mode="concat",
+        subject_count=4,
+        # temporal predictor hyper‑params
+        pred_layers=3,
+        pred_heads=8,
+        pred_dropout=0.3,
+        rope_pct=1.0,
+        # HRF-related
         use_hrf_conv=False,
         learn_hrf=False,
+        hrf_size=8,
+        tr_sec=1.49,
+        # training
+        mask_prob=0.2,
     ):
+        """
+        FMRIModel combines modality fusion and temporal prediction.
+
+        Args:
+            input_dims (dict): Mapping modality names to input dimensions.
+            output_dim (int): Output feature dimension.
+            fusion_hidden_dim (int): Hidden dimension for fusion transformer.
+            fusion_layers (int): Number of layers in fusion transformer.
+            fusion_heads (int): Number of attention heads in fusion transformer.
+            fusion_dropout (float): Dropout rate in fusion transformer.
+            subject_dropout_prob (float): Probability to drop subject embedding during training.
+            use_fusion_transformer (bool): Whether to use transformer for fusion stage.
+            proj_layers (int): Number of layers in modality projection.
+            fuse_mode (str): Fusion mode, e.g., "concat" or "mean".
+            subject_count (int): Number of subjects.
+            pred_layers (int): Number of layers in prediction transformer.
+            pred_heads (int): Number of attention heads in prediction transformer.
+            pred_dropout (float): Dropout rate in prediction transformer.
+            rope_pct (float): Percentage parameter for RoPE positional encoding.
+            use_hrf_conv (bool): Whether to use HRF convolution on outputs.
+            learn_hrf (bool): Whether HRF convolution weights are learnable.
+            hrf_size (int): Kernel size for HRF convolution.
+            tr_sec (float): Repetition time in seconds for HRF.
+            mask_prob (float): Probability to mask input during training.
+        """
         super().__init__()
         self.encoder = ModalityFusionTransformer(
-            input_dims, subject_count, hidden_dim=hidden_dim, fuse_mode=fuse_mode
+            input_dims,
+            subject_count=subject_count,
+            hidden_dim=fusion_hidden_dim,
+            num_layers=fusion_layers,
+            num_heads=fusion_heads,
+            dropout_rate=fusion_dropout,
+            subject_dropout_prob=subject_dropout_prob,
+            fuse_mode=fuse_mode,
+            use_transformer=use_fusion_transformer,
+            num_layers_projection=proj_layers,
         )
 
         fused_dim = (
-            hidden_dim * (len(input_dims) + 2)
+            fusion_hidden_dim * (len(input_dims) + 2)
             if fuse_mode == "concat"
-            else hidden_dim
+            else fusion_hidden_dim
         )
 
         self.predictor = PredictionTransformerRoPE(
             input_dim=fused_dim,
             output_dim=output_dim,
-            num_layers=3,
-            num_heads=8,
-            dropout=0.3
+            num_layers=pred_layers,
+            num_heads=pred_heads,
+            dropout=pred_dropout,
+            rope_pct=rope_pct,
         )
 
         self.use_hrf_conv = use_hrf_conv
         self.learn_hrf = learn_hrf
-        hrf_size = 8
-        tr = 1.49  # or your true TR
+        self.hrf_size = hrf_size
 
         if use_hrf_conv:
             self.hrf_conv = nn.Conv1d(
                 in_channels=output_dim,
                 out_channels=output_dim,
-                kernel_size=hrf_size,
+                kernel_size=self.hrf_size,
                 padding=0,
                 groups=output_dim,
                 bias=False,
             )
             with torch.no_grad():
-                hrf = spm_hrf(tr=tr, size=hrf_size)
+                hrf = spm_hrf(tr=tr_sec, size=self.hrf_size)
                 # reshape to (output_dim, 1, kernel_size) and broadcast
                 hrf_weight = torch.tensor(hrf).view(1, 1, -1).repeat(output_dim, 1, 1)
                 self.hrf_conv.weight.copy_(hrf_weight)
@@ -253,7 +304,7 @@ class FMRIModel(nn.Module):
 
         if self.use_hrf_conv:
             preds = preds.transpose(1, 2)
-            preds = F.pad(preds, (7, 0))
+            preds = F.pad(preds, (self.hrf_size - 1, 0))
             preds = self.hrf_conv(preds)
             preds = preds.transpose(1, 2)
 

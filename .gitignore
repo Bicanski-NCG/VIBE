@@ -12,6 +12,7 @@ wheels/
 # IDE and editor files
 .vscode/
 .idea/
+.ipynb_checkpoints/
 
 # Data files
 fmri/

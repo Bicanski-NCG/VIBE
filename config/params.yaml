@@ -1,90 +1,111 @@
-# config/params.yaml
+########################################################
+#                                                      #
+#                      Parameters                      #
+#                                                      #
+########################################################
 
-train:
-  # Name that will appear on WandB
-  run_name: "run_name"
+# Name that will appear on WandB
+run_name: "run_name"
 
-  # ------------- Training -------------
+# ------------- Training -------------
 
-  # Max epochs
-  epochs: 150
-  
-  # Batch size
-  batch_size: 4
+# Max epochs
+epochs: 150
 
-  # Learning rate
-  lr: 0.0001
+# Batch size
+batch_size: 4
 
-  # Number of warmup epochs
-  warmup_epochs: 0
+# Learning rate
+lr: 0.0001
 
-  # Multiplicative starting factor for warmup
-  warmup_start_lr_factor: 0.1
+# Number of warmup epochs
+warmup_epochs: 0
 
-  # Weight decay
-  weight_decay: 0.0001
+# Multiplicative starting factor for warmup
+warmup_start_lr_factor: 0.1
 
-  # Accelerator
-  device: "cuda:0"
+# Weight decay
+weight_decay: 0.0001
 
-  # Epochs patience
-  early_stop_patience: 1
+# Accelerator
+device: "cuda:0"
 
-  # Loss weights
-  lambda_sample: 0
-  lambda_roi: 0
-  lambda_mse: 0.01
+# Epochs patience
+early_stop_patience: 3
 
-  # L2 regularization of HRF kernel towards canonical SPM form (does not contribute to loss)
-  lambda_hrf: 0.001
+# Loss weights
+lambda_sample: 0
+lambda_roi: 0
+lambda_mse: 0.01
 
-  # Log roi correlations every N epochs. Set to 0 to disable ROI logging
-  roi_log_interval: 1
-  
-  # Probability of dropping entire modality
-  modality_drop_prob: 0.0
+# L2 regularization of HRF kernel towards canonical SPM form (does not contribute to loss)
+lambda_hrf: 0.001
 
-  # ------------- Data -------------
+# Log roi correlations every N epochs. Set to 0 to disable ROI logging
+roi_log_interval: 1
 
-  # Augment data with training noise. Set to 0.0 to disable
-  train_noise_std: 0.0
+# Probability of dropping entire modality
+modality_drop_prob: 0.0
 
-  # Oversample movies by N - 1 times (scheduled for deprecation). Set to 1 to disable
-  oversample_factor: 1
+# ------------- Data -------------
 
-  # Stratify by variable name. Set to false to disable.
-  # Weights samples to balance classes. One of ["is_movie", "name", false]
-  stratification_variable: false
+# Augment data with training noise. Set to 0.0 to disable
+train_noise_std: 0.0
 
-  # Normalize validation bold
-  normalize_validation_bold: false
+# Oversample movies by N - 1 times (scheduled for deprecation). Set to 1 to disable
+oversample_factor: 1
 
-  # Whether to use precomputed normalization stats
-  use_normalization: false
+# Stratify by variable name. Set to false to disable.
+# Weights samples to balance classes. One of ["is_movie", "name", false]
+stratification_variable: false
 
-  # Validation season or movie. One of ["s01"-"s06", "bourne", "figures", "life", "wolf"]
-  val_name: "s06"
+# Normalize validation bold
+normalize_validation_bold: false
 
-  # Whether to validate on first or second run if multiple. One of ["all", "0", "1"]
-  val_run: "all"
+# Whether to use precomputed normalization stats
+use_normalization: false
 
-  # Performance settings
-  num_workers: 8
-  prefetch_factor: 4
-  persistent_workers: false
-  pin_memory: true
+# Validation season or movie. One of ["s01"-"s06", "bourne", "figures", "life", "wolf"]
+val_name: "s06"
 
-  # ------------- Model -------------
+# Whether to validate on first or second run if multiple. One of ["all", "0", "1"]
+val_run: "all"
 
-  # Fuse mode for modalities
-  fuse_mode: "concat"
+# Performance settings
+num_workers: 8
+prefetch_factor: 4
+persistent_workers: false
+pin_memory: true
 
-  # Hidden dim of transformer
-  hidden_dim: 256
+# ------------- Model -------------
 
-  # Whether to use HRF convolution, and make it learnable
-  use_hrf_conv: false
-  learn_hrf: false
+# Number of voxels (output dimension of the model)
+output_dim: 1000
 
-  # Probability of masking in the model
-  mask_prob: 0.2
+# HRF convolution settings
+use_hrf_conv: false
+learn_hrf: false
+
+# Input masking probability during training
+mask_prob: 0.2
+
+# Fusion transformer hyperparameters
+fusion_hidden_dim: 256
+fuse_mode: "concat"
+fusion_layers: 1
+fusion_heads: 4
+fusion_dropout: 0.3
+subject_dropout_prob: 0.0
+use_fusion_transformer: true
+proj_layers: 1
+subject_count: 4
+
+# Prediction transformer hyperparameters
+pred_layers: 3
+pred_heads: 8
+pred_dropout: 0.3
+rope_pct: 1.0
+
+# HRF convolution hyperparameters
+hrf_size: 8
+tr_sec: 1.49

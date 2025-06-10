@@ -10,13 +10,13 @@ train:
   epochs: 150
   
   # Batch size
-  batch_size: 8
+  batch_size: 4
 
   # Learning rate
   lr: 0.0001
 
   # Number of warmup epochs
-  warmup_epochs: 3
+  warmup_epochs: 0
 
   # Multiplicative starting factor for warmup
   warmup_start_lr_factor: 0.1
@@ -28,12 +28,12 @@ train:
   device: "cuda:0"
 
   # Epochs patience
-  early_stop_patience: 5
+  early_stop_patience: 1
 
   # Loss weights
   lambda_sample: 0
-  lambda_roi: 0.01
-  lambda_mse: 0.001
+  lambda_roi: 0
+  lambda_mse: 0.01
 
   # L2 regularization of HRF kernel towards canonical SPM form (does not contribute to loss)
   lambda_hrf: 0.001
@@ -42,7 +42,7 @@ train:
   roi_log_interval: 1
   
   # Probability of dropping entire modality
-  modality_drop_prob: 0.15
+  modality_drop_prob: 0.0
 
   # ------------- Data -------------
 

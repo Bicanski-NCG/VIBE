@@ -169,7 +169,7 @@ def plot_glass_brain(r: np.ndarray,
     cbar.set_label("Pearson $r$", rotation=90, labelpad=12, fontsize=12)
     name = f"{filename or 'glass_brain'}_{subj_id}.png"
     path = out_dir / name
-    disp.savefig(path, dpi=150)
+    plt.savefig(path, dpi=150, bbox_inches='tight')
     disp.close()
     return path
 
@@ -272,7 +272,7 @@ def plot_residual_glass(y_true: np.ndarray,
     cbar = disp._cbar
     cbar.set_label("ΔBOLD (pred − true)", rotation=90, labelpad=12, fontsize=12)
     path = out_dir / f"glass_residual_{subj_id}.png"
-    disp.savefig(path, dpi=150)
+    plt.savefig(path, dpi=150, bbox_inches='tight')
     disp.close()
     return path
 
@@ -298,7 +298,7 @@ def plot_pred_vs_true_scatter(y_true: np.ndarray,
     fig.colorbar(hb, ax=ax, label="count")
     path = out_dir / f"scatter_pred_true_{subj_id}.png"
     fig.tight_layout()
-    fig.savefig(path, dpi=150)
+    fig.savefig(path, dpi=150, bbox_inches='tight')
     plt.close(fig)
     return path
 

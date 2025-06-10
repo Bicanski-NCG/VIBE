@@ -261,7 +261,7 @@ def run_epoch(loader, model, optimizer, device, is_train, global_step, config):
         features = {k: batch[k].to(device) for k in loader.dataset.modalities}
 
         # ── Modality dropout: randomly zero‑out entire modalities ──────────
-        drop_prob = config.get("modality_dropout_prob", 0.05)  # e.g. 0.15 in params.yaml
+        drop_prob = config.get("modality_dropout_prob", 0.00)  # e.g. 0.15 in params.yaml
         if is_train and drop_prob > 0:
             for mod in loader.dataset.modalities:
                 if random.random() < drop_prob:

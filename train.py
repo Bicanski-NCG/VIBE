@@ -162,7 +162,7 @@ def get_data_loaders(features, input_dims, modality_keys, config, data_dir):
         ds,
         val_name=config.get("val_name", "s06"),
         val_run=config.get("val_run", "all"),
-        train_noise_std=0.0,
+        train_noise_std=config.get("train_noise_std", 0.0),
         normalize_validation_bold=config.get("normalize_validation_bold", False),
     )
 
@@ -224,6 +224,7 @@ def build_model(input_dims, config, device):
         fuse_mode=config["fuse_mode"],
         hidden_dim=config["hidden_dim"],
         subject_count=4,
+        mask_prob=config.get("mask_prob", 0.2),
         use_hrf_conv=config.get("use_hrf_conv", False),
         learn_hrf=config.get("learn_hrf", False),
     )

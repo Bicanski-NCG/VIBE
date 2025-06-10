@@ -1,20 +1,90 @@
 # config/params.yaml
 
 train:
+  # Name that will appear on WandB
+  run_name: "run_name"
+
+  # ------------- Training -------------
+
+  # Max epochs
   epochs: 150
-  batch_size: 4
+  
+  # Batch size
+  batch_size: 8
+
+  # Learning rate
   lr: 0.0001
+
+  # Number of warmup epochs
+  warmup_epochs: 3
+
+  # Multiplicative starting factor for warmup
+  warmup_start_lr_factor: 0.1
+
+  # Weight decay
   weight_decay: 0.0001
+
+  # Accelerator
   device: "cuda:0"
-  early_stop_patience: 1
+
+  # Epochs patience
+  early_stop_patience: 5
+
+  # Loss weights
   lambda_sample: 0
-  lambda_roi: 0
-  lambda_mse: 0.01
+  lambda_roi: 0.01
+  lambda_mse: 0.001
+
+  # L2 regularization of HRF kernel towards canonical SPM form (does not contribute to loss)
   lambda_hrf: 0.001
+
+  # Log roi correlations every N epochs. Set to 0 to disable ROI logging
+  roi_log_interval: 1
+  
+  # Probability of dropping entire modality
+  modality_drop_prob: 0.15
+
+  # ------------- Data -------------
+
+  # Augment data with training noise. Set to 0.0 to disable
+  train_noise_std: 0.0
+
+  # Oversample movies by N - 1 times (scheduled for deprecation). Set to 1 to disable
+  oversample_factor: 1
+
+  # Stratify by variable name. Set to false to disable.
+  # Weights samples to balance classes. One of ["is_movie", "name", false]
+  stratification_variable: false
+
+  # Normalize validation bold
+  normalize_validation_bold: false
+
+  # Whether to use precomputed normalization stats
+  use_normalization: false
+
+  # Validation season or movie. One of ["s01"-"s06", "bourne", "figures", "life", "wolf"]
+  val_name: "s06"
+
+  # Whether to validate on first or second run if multiple. One of ["all", "0", "1"]
+  val_run: "all"
+
+  # Performance settings
+  num_workers: 8
+  prefetch_factor: 4
+  persistent_workers: false
+  pin_memory: true
+
+  # ------------- Model -------------
+
+  # Fuse mode for modalities
   fuse_mode: "concat"
+
+  # Hidden dim of transformer
   hidden_dim: 256
+
+  # Whether to use HRF convolution, and make it learnable
   use_hrf_conv: false
   learn_hrf: false
-  val_name: "life"
-  val_run: "0"
-  roi_log_interval: 1
+
+  # Probability of masking in the model
+  mask_prob: 0.2

@@ -245,9 +245,25 @@ def create_optimizer_and_scheduler(model, config):
         param_groups = [{"params": model.parameters(), "weight_decay": config["weight_decay"]}]
 
     optimizer = optim.AdamW(param_groups, lr=config["lr"])
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=config["epochs"]
+
+    main_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=config["epochs"] - config.get("warmup_epochs", 0)
     )
+    
+    if config.get("warmup_epochs", 0) == 0:
+        warm_scheduler = torch.optim.lr_scheduler.LinearLR(
+            optimizer, start_factor=config.get("warmup_start_lr_factor", 0.1), 
+            end_factor=1.0, total_iters=config["warmup_epochs"]
+        )
+
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer,
+            schedulers=[warm_scheduler, main_scheduler],
+            milestones=[config["warmup_epochs"]]
+        )
+    else:
+        scheduler = main_scheduler
+
     return optimizer, scheduler
 
 

@@ -15,6 +15,6 @@ train:
   hidden_dim: 256
   use_hrf_conv: false
   learn_hrf: false
-  val_name: "life"
-  val_run: "0"
+  val_name: "s06"
+  val_run: "all"
   roi_log_interval: 1

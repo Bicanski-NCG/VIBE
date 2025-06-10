@@ -89,7 +89,7 @@ def predict_fmri_for_test_set(
             subj_ids = torch.tensor([subj_id]).to(device)
 
             with torch.no_grad():
-                preds = model(features, subj_ids, attention_mask)
+                preds = model(features, subj_ids, [0],attention_mask)
 
             output_dict[subj][episode] = (
                 preds.squeeze(0).cpu().numpy().astype(np.float32)
@@ -205,14 +205,14 @@ feature_paths = {
     "thinker_12": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_12", #torch.Size([1, 984, 2048])
     "thinker_24": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_24", #torch.Size([1, 984, 2048])
     "thinker_36": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_36", #torch.Size([1, 984, 2048])
-    "text": "Features/Text/Qwen3B_tr1.49_len60_before50",
+    "text": "Features/Text/Qwen2.5_7B_Full_tr1.49",
     "fast_res3_act": "Features/Visual/SlowFast_R101_tr1.49/fast_res3_act",
     "fast_stem_act": "Features/Visual/SlowFast_R101_tr1.49/fast_stem_act",
     "pool_concat": "Features/Visual/SlowFast_R101_tr1.49/pool_concat",
     "slow_res3_act": "Features/Visual/SlowFast_R101_tr1.49/slow_res3_act",
     "slow_res5_act": "Features/Visual/SlowFast_R101_tr1.49/slow_res5_act",
     "slow_stem_act": "Features/Visual/SlowFast_R101_tr1.49/slow_stem_act",
-    "audio_long_contrext": "Features/Audio/Wave2Vec2/features_chunk1.49_len60_before50",
+    "audio_long_context": "Features/Audio/Wave2Vec2/features_chunk1.49_len60_before50",
     # "audio_mfcc_mono": "Features/Audio/LowLevel/_chunk1.49_len4.0_before2.0_nmfcc32_nstats4/mono/movies/",
     # "audio_mfcc_stereo": "Features/Audio/LowLevel/_chunk1.49_len4.0_before2.0_nmfcc32_nstats4/stereo/movies/",
 
@@ -220,23 +220,23 @@ feature_paths = {
 
 input_dims = {
     "aud_last": 1280 * 2,
-    "aud_ln_post": 1280 * 2,
+    #"aud_ln_post": 1280 * 2,
     #"conv3d_features": 1280 * 2,
     #"vis_block5": 1280 * 2,
-    "vis_block8": 1280 * 2,
+    #"vis_block8": 1280 * 2,
     #"vis_block12": 1280 * 2,
     "vis_merged": 2048 * 2,
     #"thinker_12": 2048 * 2,
-    "thinker_24": 2048 * 2,
-    #"thinker_36": 2048 * 2,
-    "text": 2048,
+   # "thinker_24": 2048 * 2,
+    "thinker_36": 2048 * 2,
+    "text": 3584,
     #"fast_res3_act": 2048,
     #"fast_stem_act": 1024,
     "pool_concat": 9216,
     "slow_res3_act": 4096,
     #"slow_res5_act": 4096,
     #"slow_stem_act": 8192,
-    "audio_long_contrext": 2048,
+    #"audio_long_context": 2048,
     # "audio_mfcc_mono":int(4*32),
     # "audio_mfcc_stereo":int(4*32)
 
@@ -247,7 +247,7 @@ model = FMRIModel(
     input_dims, 1000, hidden_dim=256, fuse_mode="concat", subject_count=4,
 )
 
-model.load_state_dict(torch.load("final_model.pt"))
+model.load_state_dict(torch.load("checkpoints/f08qah39/final_model.pt"))
 model.eval()
 
 predictions = predict_fmri_for_test_set(
@@ -255,7 +255,7 @@ predictions = predict_fmri_for_test_set(
     feature_paths=feature_paths,
     sample_counts_root="fmri",
     normalization_stats=None,
-    device="cuda:0",
+    device="cuda:4",
 )
 
 output_file = "fmri_predictions_friends_s7.npy"

@@ -67,6 +67,8 @@ def split_movie_into_chunks(movie_path, chunk_interval, chunk_length, seconds_be
     while start_time < video_duration:
         chunk_start = max(0, start_time - seconds_before_chunk)
         chunk_end = min(chunk_start + chunk_length, video_duration)
+        if chunk_end-chunk_start<chunk_length:
+            chunk_start = chunk_end-chunk_length
         chunks.append((chunk_start, chunk_end))
         start_time += chunk_interval
 
@@ -165,8 +167,8 @@ def extract_audio_features(
         mfeatures = get_statistics(mono_mfcc, k=n_statistics).T
         sfeatures = get_statistics(stereo_mfcc, k=n_statistics).T
 
-        mono_features.append(mfeatures.flatten())  # Use .flatten() method
-        stereo_features.append(sfeatures.flatten())
+        mono_features.append(np.nan_to_num(mfeatures.flatten())) # Use .flatten() method
+        stereo_features.append(np.nan_to_num(sfeatures.flatten()))
 
     # Format the audio features
     mono_features = np.array(mono_features, dtype="float32")
@@ -214,6 +216,8 @@ def process_mono_stereo_folder(input_folder, output_folder,
     elif not os.path.isdir(input_folder):
         print(f"Error: The path '{input_folder}' is not a directory.")
     for root, _, files in os.walk(input_folder):
+        if '.git' in root.split(os.sep):    
+            continue
         for file in files:
             if file.endswith(".mkv"):
                 video_files.append((root, file))

@@ -111,7 +111,7 @@ def extract_audio_features(
 
     # --- HIGHLY RECOMMENDED IMPROVEMENT: Extract entire audio once ---
     print(f"Extracting full audio from {video_path}...")
-    full_audio_path = os.path.join(temp_dir, "full_audio.wav")
+    full_audio_path = os.path.join(temp_dir, "full_audio_new.wav")
 
     # Use moviepy to extract the *entire* audio track
     clip = VideoFileClip(video_path)
@@ -141,6 +141,7 @@ def extract_audio_features(
         # Slice the already loaded audio array
         # Handle cases where chunk might go slightly beyond audio length due to float conversion
         y_chunk = y_full[:, start_sample:end_sample]
+        y_chunk = y_chunk + np.random.normal(size=y_chunk.shape,scale=0.001)
 
         # Ensure we have at least 2 channels for stereo processing
         if y_chunk.shape[0] < 2:
@@ -184,7 +185,7 @@ def extract_audio_features(
 def process_mono_stereo_folder(input_folder, output_folder,
                                chunk_interval, chunk_length,
                                seconds_before_chunk,
-                               n_mfcc, n_statistics):
+                               n_mfcc, n_statistics,recompute = True):
     """
     Processes all video files in a given directory, preserving folder structure, and extracts
      mono-stereo features - statistical moments of the Mel Frequency Cepstral Coefficients (MFCCs) of the
@@ -233,7 +234,7 @@ def process_mono_stereo_folder(input_folder, output_folder,
         output_paths = [os.path.join(save_path_mono, file.replace(".mkv", ".npy")),
                         os.path.join(save_path_stereo, file.replace(".mkv", ".npy"))]
 
-        if (not os.path.isfile(output_paths[0]) or not os.path.isfile(output_paths[1])):
+        if (not recompute) and (not os.path.isfile(output_paths[0]) or not os.path.isfile(output_paths[1])):
             extract_audio_features(video_path, output_paths, chunk_interval, chunk_length, seconds_before_chunk, n_mfcc,
                                    n_statistics)
 

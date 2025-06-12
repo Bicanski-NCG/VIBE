@@ -234,7 +234,7 @@ def process_mono_stereo_folder(input_folder, output_folder,
         output_paths = [os.path.join(save_path_mono, file.replace(".mkv", ".npy")),
                         os.path.join(save_path_stereo, file.replace(".mkv", ".npy"))]
 
-        if (not recompute) and (not os.path.isfile(output_paths[0]) or not os.path.isfile(output_paths[1])):
+        if (recompute) or (not os.path.isfile(output_paths[0]) or not os.path.isfile(output_paths[1])):
             extract_audio_features(video_path, output_paths, chunk_interval, chunk_length, seconds_before_chunk, n_mfcc,
                                    n_statistics)
 

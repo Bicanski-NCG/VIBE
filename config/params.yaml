@@ -65,6 +65,9 @@ val_name: "s06"
 # Whether to validate on first or second run if multiple. One of ["all", "0", "1"]
 val_run: "all"
 
+# Filter dataset of samples with label e.g. to filter out samples with name "life" or "hidden" use ["life", "figures"]
+filter_name: ["life", "figures"]
+
 # Performance settings
 num_workers: 8
 prefetch_factor: 4

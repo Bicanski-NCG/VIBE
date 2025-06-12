@@ -24,6 +24,7 @@ class Config:
     stratification_variable: Optional[str] = None
     val_name: str = "s06"
     val_run: str = "all"
+    filter_name: List[str] = None
     train_noise_std: float = 0.0
     use_normalization: bool = False
     normalize_validation_bold: bool = False

@@ -226,7 +226,7 @@ def create_optimizer_and_scheduler(model, config):
         optimizer, T_max=config.epochs - config.warmup_epochs
     )
     
-    if config.warmup_epochs == 0:
+    if config.warmup_epochs > 0:
         warm_scheduler = torch.optim.lr_scheduler.LinearLR(
             optimizer, start_factor=config.warmup_start_lr_factor, 
             end_factor=1.0, total_iters=config.warmup_epochs

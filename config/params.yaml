@@ -4,9 +4,6 @@
 #                                                      #
 ########################################################
 
-# Name that will appear on WandB
-run_name: "run_name"
-
 # ------------- Training -------------
 
 # Max epochs
@@ -27,9 +24,6 @@ warmup_start_lr_factor: 0.1
 # Weight decay
 weight_decay: 0.0001
 
-# Accelerator
-device: "cuda:0"
-
 # Epochs patience
 early_stop_patience: 3
 
@@ -45,7 +39,7 @@ lambda_hrf: 0.001
 roi_log_interval: 1
 
 # Probability of dropping entire modality
-modality_drop_prob: 0.0
+modality_dropout_prob: 0.0
 
 # ------------- Data -------------
 
@@ -82,10 +76,6 @@ pin_memory: true
 # Number of voxels (output dimension of the model)
 output_dim: 1000
 
-# HRF convolution settings
-use_hrf_conv: false
-learn_hrf: false
-
 # Input masking probability during training
 mask_prob: 0.2
 
@@ -107,5 +97,7 @@ pred_dropout: 0.3
 rope_pct: 1.0
 
 # HRF convolution hyperparameters
+use_hrf_conv: false
+learn_hrf: false
 hrf_size: 8
 tr_sec: 1.49

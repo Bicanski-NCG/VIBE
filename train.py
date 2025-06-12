@@ -5,6 +5,7 @@ import wandb
 from pathlib import Path
 import pickle, gzip
 import glob
+import os
 
 import numpy as np
 import pandas as pd
@@ -24,7 +25,7 @@ from losses import (
     roi_similarity_loss
 )
 from utils import save_initial_state, load_initial_state, set_seed, log_model_params
-
+from config import Config
 from viz import (
     load_and_label_atlas,
     voxelwise_pearsonr,
@@ -84,94 +85,50 @@ def collect_predictions(loader, model, device):
     return fmri_true, fmri_pred, subj_order, atlas_paths
 
 
-def load_config():
+def parse_args():
     """Parse CLI arguments and load YAML configuration files."""
     parser = argparse.ArgumentParser(description="Training entrypoint")
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=None,
-        help="Random seed for reproducibility. If omitted, a random seed will be chosen.",
-    )
-    parser.add_argument(
-        "--features",
-        "-f",
-        type=str,
-        default="config/features.yaml",
-        help="Path to the YAML file with feature paths",
-    )
-    parser.add_argument(
-        "--params",
-        "-p",
-        type=str,
-        default="config/params.yaml",
-        help="Path to the YAML file with training configuration",
-    )
-    parser.add_argument(
-        "--name",
-        type=str,
-        default=None,
-        help="Name for the W&B run",
-    )
-    args = parser.parse_args()
-
-    # Determine final seed: use provided one or generate a new random seed
-    if args.seed is None:
-        chosen_seed = random.SystemRandom().randint(0, 2**32 - 1)
-        print(f"No --seed provided; using generated seed={chosen_seed}")
-    else:
-        chosen_seed = args.seed
-        print(f"Using user-provided seed={chosen_seed}")
-    set_seed(chosen_seed)
-
-    # Load feature paths and input dimensions
-    with open(args.features, "r") as f:
-        feature_dict = yaml.safe_load(f)
-        features = feature_dict["features"]
-        input_dims = feature_dict["input_dims"]
-        data_dir = feature_dict.get("data_dir", "data/fmri")
-        modality_keys = list(input_dims.keys())
-
-    # Load training hyperparameters
-    with open(args.params, "r") as f:
-        config = yaml.safe_load(f)
-
-    # Log the chosen seed in the config for W&B metadata
-    config["seed"] = chosen_seed
-    config["run_name"] = args.name
-
-    # Add modalities to WandB config
-    config["modalities"] = modality_keys
-
-    return features, input_dims, modality_keys, config, data_dir
+    parser.add_argument("--features", default=None, type=str, help="Path to features YAML file")
+    parser.add_argument("--features_dir", default=None, type=str, help="Directory for features")
+    parser.add_argument("--data_dir", default=None, type=str, help="Directory for fMRI data")
+    parser.add_argument("--params", default=None, type=str, help="Path to training parameters YAML file")
+    parser.add_argument("--seed", default=None, type=int, help="Random seed for reproducibility")
+    parser.add_argument("--name", default=None, type=str, help="Run name for W&B")
+    parser.add_argument("--device", default="cuda", type=str, help="Device to use for training (default: cuda)")
+    parser.add_argument("--wandb_project", default="fmri-model", type=str, help="W&B project name")
+    return parser.parse_known_args()[0]
 
 
-def get_data_loaders(features, input_dims, modality_keys, config, data_dir):
+def get_data_loaders(config):
     """Instantiate datasets and DataLoaders for training, validation, and full retraining."""
     # Assume normalization stats have been precomputed
     norm_stats = torch.load("normalization_stats.pt")
 
-    ds = FMRI_Dataset(data_dir,
-                      feature_paths=features,
-                      input_dims=input_dims,
-                      modalities=modality_keys,
-                      noise_std=config.get("train_noise_std", 0.0),
-                      normalization_stats=norm_stats if config.get("use_normalization", False) else None,
-                      oversample_factor=config.get("oversample_factor", 1))
+    # Prepend the features directory to each feature path
+    features_dir = Path(config.features_dir)
+    config.features = {n: str(features_dir / p) for n, p in config.features.items()}
+
+    ds = FMRI_Dataset(config.data_dir,
+                      feature_paths=config.features,
+                      input_dims=config.input_dims,
+                      modalities=config.modalities,
+                      noise_std=config.train_noise_std,
+                      normalization_stats=norm_stats if config.use_normalization else None,
+                      oversample_factor=config.oversample_factor)
     
     print(f"Dataset size: {len(ds)} samples")
 
     train_ds, valid_ds = split_dataset_by_name(
         ds,
-        val_name=config.get("val_name", "s06"),
-        val_run=config.get("val_run", "all"),
-        train_noise_std=config.get("train_noise_std", 0.0),
-        normalize_validation_bold=config.get("normalize_validation_bold", False),
+        val_name=config.val_name,
+        val_run=config.val_run,
+        train_noise_std=config.train_noise_std,
+        normalize_validation_bold=config.normalize_validation_bold,
     )
 
-    if config.get("stratification_variable", False):
-        train_weights = make_group_weights(train_ds, filter_on=config["stratification_variable"])
-        print(f"Using stratification variable: {config['stratification_variable']}")
+    if config.stratification_variable:
+        train_weights = make_group_weights(train_ds, filter_on=config.stratification_variable)
+        print(f"Using stratification variable: {config.stratification_variable}")
         sampler = torch.utils.data.WeightedRandomSampler(
             weights=train_weights,
             num_samples=len(train_weights),
@@ -184,70 +141,70 @@ def get_data_loaders(features, input_dims, modality_keys, config, data_dir):
 
     train_loader = DataLoader(
         train_ds,
-        batch_size=config["batch_size"],
-        sampler=sampler if config.get("stratification_variable", False) else None,
-        shuffle=False if config.get("stratification_variable", False) else True,
+        batch_size=config.batch_size,
+        sampler=sampler if config.stratification_variable else None,
+        shuffle=False if config.stratification_variable else True,
         collate_fn=collate_fn,
-        num_workers=config.get("num_workers", 8),
-        prefetch_factor=config.get("prefetch_factor", 2),
-        persistent_workers=config.get("persistent_workers", False),
-        pin_memory=config.get("pin_memory", False),
+        num_workers=config.num_workers,
+        prefetch_factor=config.prefetch_factor,
+        persistent_workers=config.persistent_workers,
+        pin_memory=config.pin_memory,
     )
     
     valid_loader = DataLoader(
         valid_ds,
-        batch_size=config["batch_size"],
+        batch_size=config.batch_size,
         shuffle=False,
         collate_fn=collate_fn,
-        num_workers=config.get("num_workers", 8),
-        prefetch_factor=config.get("prefetch_factor", 2),
-        persistent_workers=config.get("persistent_workers", False),
-        pin_memory=config.get("pin_memory", False),
+        num_workers=config.num_workers,
+        prefetch_factor=config.prefetch_factor,
+        persistent_workers=config.persistent_workers,
+        pin_memory=config.pin_memory,
     )
 
     full_loader = DataLoader(
         ds,
-        batch_size=config["batch_size"],
+        batch_size=config.batch_size,
         shuffle=True,
         collate_fn=collate_fn,
-        num_workers=config.get("num_workers", 8),
-        prefetch_factor=config.get("prefetch_factor", 2),
-        persistent_workers=config.get("persistent_workers", False),
-        pin_memory=config.get("pin_memory", False),
+        num_workers=config.num_workers,
+        prefetch_factor=config.prefetch_factor,
+        persistent_workers=config.persistent_workers,
+        pin_memory=config.pin_memory,
     )
 
     return train_loader, valid_loader, full_loader
 
 
-def build_model(input_dims, config, device):
+def build_model(config):
     """Instantiate the FMRIModel and move to device."""
     model = FMRIModel(
-        input_dims,
-        config.get("output_dim", 1000),
+        config.input_dims,
+        config.output_dim,
         # fusion-stage hyper-params
-        fusion_hidden_dim=config.get("fusion_hidden_dim", 256),
-        fusion_layers=config.get("fusion_layers", 1),
-        fusion_heads=config.get("fusion_heads", 4),
-        fusion_dropout=config.get("fusion_dropout", 0.3),
-        subject_dropout_prob=config.get("subject_dropout_prob", 0.0),
-        use_fusion_transformer=config.get("use_fusion_transformer", True),
-        proj_layers=config.get("proj_layers", 1),
-        fuse_mode=config.get("fuse_mode", "concat"),
-        subject_count=config.get("subject_count", 4),
+        fusion_hidden_dim=config.fusion_hidden_dim,
+        fusion_layers=config.fusion_layers,
+        fusion_heads=config.fusion_heads,
+        fusion_dropout=config.fusion_dropout,
+        subject_dropout_prob=config.subject_dropout_prob,
+        use_fusion_transformer=config.use_fusion_transformer,
+        proj_layers=config.proj_layers,
+        fuse_mode=config.fuse_mode,
+        subject_count=config.subject_count,
         # temporal predictor hyper-params
-        pred_layers=config.get("pred_layers", 3),
-        pred_heads=config.get("pred_heads", 8),
-        pred_dropout=config.get("pred_dropout", 0.3),
-        rope_pct=config.get("rope_pct", 1.0),
+        pred_layers=config.pred_layers,
+        pred_heads=config.pred_heads,
+        pred_dropout=config.pred_dropout,
+        rope_pct=config.rope_pct,
         # HRF-related
-        use_hrf_conv=config.get("use_hrf_conv", False),
-        learn_hrf=config.get("learn_hrf", False),
-        hrf_size=config.get("hrf_size", 8),
-        tr_sec=config.get("tr_sec", 1.49),
+        use_hrf_conv=config.use_hrf_conv,
+        learn_hrf=config.learn_hrf,
+        hrf_size=config.hrf_size,
+        tr_sec=config.tr_sec,
         # training
-        mask_prob=config.get("mask_prob", 0.2),
+        mask_prob=config.mask_prob,
     )
-    model.to(device)
+    model.to(config.device)
     return model
 
 
@@ -258,27 +215,27 @@ def create_optimizer_and_scheduler(model, config):
         other_params = [p for n, p in model.named_parameters() if n != "hrf_conv.weight"]
         param_groups = [
             {"params": hrf_params, "weight_decay": 0.0},
-            {"params": other_params, "weight_decay": config["weight_decay"]},
+            {"params": other_params, "weight_decay": config.weight_decay},
         ]
     else:
-        param_groups = [{"params": model.parameters(), "weight_decay": config["weight_decay"]}]
+        param_groups = [{"params": model.parameters(), "weight_decay": config.weight_decay}]
 
-    optimizer = optim.AdamW(param_groups, lr=config["lr"])
+    optimizer = optim.AdamW(param_groups, lr=config.lr)
 
     main_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=config["epochs"] - config.get("warmup_epochs", 0)
+        optimizer, T_max=config.epochs - config.warmup_epochs
     )
     
-    if config.get("warmup_epochs", 0) == 0:
+    if config.warmup_epochs == 0:
         warm_scheduler = torch.optim.lr_scheduler.LinearLR(
-            optimizer, start_factor=config.get("warmup_start_lr_factor", 0.1), 
-            end_factor=1.0, total_iters=config["warmup_epochs"]
+            optimizer, start_factor=config.warmup_start_lr_factor, 
+            end_factor=1.0, total_iters=config.warmup_epochs
         )
 
         scheduler = torch.optim.lr_scheduler.SequentialLR(
             optimizer,
             schedulers=[warm_scheduler, main_scheduler],
-            milestones=[config["warmup_epochs"]]
+            milestones=[config.warmup_epochs]
         )
     else:
         scheduler = main_scheduler
@@ -298,7 +255,7 @@ def run_epoch(loader, model, optimizer, device, is_train, global_step, config):
         features = {k: batch[k].to(device) for k in loader.dataset.modalities}
 
         # ── Modality dropout: randomly zero‑out entire modalities ──────────
-        drop_prob = config.get("modality_dropout_prob", 0.00)  # e.g. 0.15 in params.yaml
+        drop_prob = config.modality_dropout_prob  # e.g. 0.15 in params.yaml
         if is_train and drop_prob > 0:
             for mod in loader.dataset.modalities:
                 if random.random() < drop_prob:
@@ -321,13 +278,13 @@ def run_epoch(loader, model, optimizer, device, is_train, global_step, config):
             mse_loss = nn.functional.mse_loss(pred, fmri)
             loss = (
                 negative_corr_loss
-                + config["lambda_sample"] * sample_loss
-                + config["lambda_roi"] * roi_loss
-                + config["lambda_mse"] * mse_loss
+                + config.lambda_sample * sample_loss
+                + config.lambda_roi * roi_loss
+                + config.lambda_mse * mse_loss
             )
             if getattr(model, "use_hrf_conv", False) and getattr(model, "learn_hrf", False):
                 hrf_dev = model.hrf_conv.weight - model.hrf_prior
-                loss += config.get("lambda_hrf", 0.0) * hrf_dev.norm(p=2)
+                loss += config.lambda_hrf * hrf_dev.norm(p=2)
 
             if is_train:
                 loss.backward()
@@ -352,9 +309,9 @@ def run_epoch(loader, model, optimizer, device, is_train, global_step, config):
 
     total_loss = (
         epoch_negative_corr_loss / len(loader)
-        + config["lambda_sample"] * (epoch_sample_loss / len(loader))
-        + config["lambda_roi"] * (epoch_roi_loss / len(loader))
-        + config["lambda_mse"] * (epoch_mse_loss / len(loader))
+        + config.lambda_sample * (epoch_sample_loss / len(loader))
+        + config.lambda_roi * (epoch_roi_loss / len(loader))
+        + config.lambda_mse * (epoch_mse_loss / len(loader))
     )
     return (
         total_loss,
@@ -365,7 +322,7 @@ def run_epoch(loader, model, optimizer, device, is_train, global_step, config):
     ), global_step
 
 
-def train_loop(features, input_dims, modality_keys, config, data_dir):
+def train_loop(config):
     """Full training pipeline including early stopping. Returns best_val_epoch, ckpt_dir, model, and full_loader."""
     
     # Define x-axis metrics for W&B
@@ -381,12 +338,10 @@ def train_loop(features, input_dims, modality_keys, config, data_dir):
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
     # Prepare DataLoaders
-    train_loader, valid_loader, full_loader = get_data_loaders(
-        features, input_dims, modality_keys, config, data_dir
-    )
+    train_loader, valid_loader, full_loader = get_data_loaders(config)
 
     # Build model and save initial state
-    model = build_model(input_dims, config, config["device"])
+    model = build_model(config)
     log_model_params(model)
     save_initial_state(
         model,
@@ -402,12 +357,12 @@ def train_loop(features, input_dims, modality_keys, config, data_dir):
     global_step = 0
     best_val_epoch = 0
 
-    for epoch in range(1, config["epochs"] + 1):
+    for epoch in range(1, config.epochs + 1):
         train_losses, global_step = run_epoch(
             train_loader,
             model,
             optimizer,
-            config["device"],
+            config.device,
             is_train=True,
             global_step=global_step,
             config=config,
@@ -416,7 +371,7 @@ def train_loop(features, input_dims, modality_keys, config, data_dir):
             valid_loader,
             model,
             optimizer,
-            config["device"],
+            config.device,
             is_train=False,
             global_step=None,
             config=config,
@@ -449,11 +404,11 @@ def train_loop(features, input_dims, modality_keys, config, data_dir):
 
         # ── Optional per‑ROI validation correlations ───────────────────────
         # Set roi_log_interval in params.yaml (e.g. 5) to control frequency; 0 disables
-        roi_interval = config.get("roi_log_interval", 0)
+        roi_interval = config.roi_log_interval
         if roi_interval and epoch % roi_interval == 0:
             with torch.no_grad():
                 fmri_true, fmri_pred, subj_ids, atlas_paths = collect_predictions(
-                    valid_loader, model, config["device"]
+                    valid_loader, model, config.device
                 )
                 # Group‑level mean voxel‑wise r
                 group_mean_r = np.mean(
@@ -480,8 +435,8 @@ def train_loop(features, input_dims, modality_keys, config, data_dir):
             patience_counter = 0
         else:
             patience_counter += 1
-            print(f"Patience {patience_counter}/{config['early_stop_patience']}")
-            if patience_counter >= config["early_stop_patience"]:
+            print(f"Patience {patience_counter}/{config.early_stop_patience}")
+            if patience_counter >= config.early_stop_patience:
                 print("⏹️ Early stopping triggered")
                 break
             
@@ -489,7 +444,7 @@ def train_loop(features, input_dims, modality_keys, config, data_dir):
     print("📊 Generating visualisations on validation set …")
     model.load_state_dict(torch.load(ckpt_dir / "best_model.pt"))
     fmri_true, fmri_pred, subj_ids, atlas_paths = collect_predictions(
-        valid_loader, model, config["device"]
+        valid_loader, model, config.device
     )
 
     # Persist validation predictions for later analysis
@@ -535,7 +490,7 @@ def train_loop(features, input_dims, modality_keys, config, data_dir):
         plot_time_correlation(r_t, sid, out_dir=str(ckpt_dir))
 
         # (5) glass-brain of worst timepoints
-        plot_glass_bads(true, pred, sid, masker, out_dir=str(ckpt_dir), pct_bads=config.get("pct_bads", 0.1))
+        plot_glass_bads(true, pred, sid, masker, out_dir=str(ckpt_dir), pct_bads=config.pct_bads)
 
         # (6) residual glass-brain
         plot_residual_glass(true, pred, sid, masker, out_dir=str(ckpt_dir))
@@ -594,13 +549,13 @@ def train_loop(features, input_dims, modality_keys, config, data_dir):
         "group",
         group_masker,
         out_dir=str(ckpt_dir),
-        pct_bads=config.get("pct_bads", 0.10)
+        pct_bads=config.pct_bads
     )
 
 
     # (7) group scatter
     plot_pred_vs_true_scatter(
-        group_res_true, group_res_pred, "group", out_dir=str(ckpt_dir), max_points=config.get("max_scatter_points", 50000)
+        group_res_true, group_res_pred, "group", out_dir=str(ckpt_dir), max_points=config.max_scatter_points
     )
 
     # (8) group PSD of residuals
@@ -632,7 +587,7 @@ def retrain_full(model, full_loader, config, best_val_epoch, ckpt_dir, start_ste
             full_loader,
             model,
             optimizer,
-            config["device"],
+            config.device,
             is_train=True,
             global_step=global_step,
             config=config,
@@ -663,20 +618,49 @@ def retrain_full(model, full_loader, config, best_val_epoch, ckpt_dir, start_ste
 
 def main():
 
-    # Load configuration files and set random seed
-    features, input_dims, modality_keys, config, data_dir = load_config()
+    args = parse_args()
+
+    # Set seed
+    if args.seed is None:
+        chosen_seed = random.SystemRandom().randint(0, 2**32 - 1)
+        print(f"No --seed provided; using generated seed={chosen_seed}")
+    else:
+        chosen_seed = args.seed
+        print(f"Using user-provided seed={chosen_seed}")
+    set_seed(chosen_seed)
+
+    # Get features and params paths
+    features_path = args.features or os.getenv("FEATURES_PATH", "config/features.yaml")
+    params_path = args.params or os.getenv("PARAMS_PATH", "config/params.yaml")
+
+    # Same for dirs 
+    features_dir = args.features_dir or os.getenv("FEATURES_DIR", "Features")
+    data_dir = args.data_dir or os.getenv("DATA_DIR", "fmri")
+
+    # Assert paths exist
+    features_path = Path(features_path)
+    params_path = Path(params_path)
+    if not features_path.exists():
+        raise FileNotFoundError(f"Features YAML file not found: {features_path}")
+    if not params_path.exists():
+        raise FileNotFoundError(f"Parameters YAML file not found: {params_path}")
+    if not Path(features_dir).exists():
+        raise FileNotFoundError(f"Features directory not found: {features_dir}")
+    if not Path(data_dir).exists():
+        raise FileNotFoundError(f"Data directory not found: {data_dir}")    
+
+    config = Config.from_yaml(features_path, params_path, chosen_seed, args.name,
+                              features_dir, data_dir, args.device)
 
     # Initialize W&B run
-    wandb.init(project="fmri-model", config=config, name=config["run_name"])
+    wandb.init(project="fmri-model", config=vars(config), name=config.run_name)
 
     # If running a W&B sweep, wandb.config contains overridden hyperparameters.
     # Merge them back into our local config dict so later code picks them up.
-    config = dict(wandb.config)
+    config = Config(**wandb.config)
 
     # Train and validate the model
-    best_val_epoch, ckpt_dir, model, full_loader, final_step = train_loop(
-        features, input_dims, modality_keys, config, data_dir
-    )
+    best_val_epoch, ckpt_dir, model, full_loader, final_step = train_loop(config)
 
     # Retrain the model on the full dataset for the best validation epoch
     retrain_full(model, full_loader, config, best_val_epoch, ckpt_dir, final_step)

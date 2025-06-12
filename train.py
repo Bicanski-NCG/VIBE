@@ -430,7 +430,7 @@ def train_loop(config):
             best_val_loss = current_val
             best_val_epoch = epoch
             torch.save(model.state_dict(), ckpt_dir / "best_model.pt")
-            wandb.save(str(ckpt_dir / "best_model.pt"))
+            wandb.log({"best_model_path": str(ckpt_dir / "best_model.pt")})
             print(f"✅ Saved new best model at epoch {epoch}")
             patience_counter = 0
         else:

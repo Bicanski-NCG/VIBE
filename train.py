@@ -617,6 +617,10 @@ def main():
     # Merge them back into our local config dict so later code picks them up.
     config = Config(**wandb.config)
 
+    # Persist the config YAML to checkpoints directory
+    config_path = Path("checkpoints") / wandb.run.id / "config.yaml"
+    config.save(config_path)
+
     # Train and validate the model
     best_val_epoch, ckpt_dir, model, full_loader, final_step = train_loop(config)
 

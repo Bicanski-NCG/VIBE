@@ -124,3 +124,30 @@ class Config:
             data_dir=data_dir,
             **params
         )
+    
+    def save(self, path: str):
+        """
+        Save the configuration to a YAML file.
+        
+        Parameters:
+        -----------
+        path : str
+            Path to save the configuration file.
+        """
+        import yaml
+        with open(path, "w") as f:
+            yaml.dump(self.__dict__, f, default_flow_style=False)
+
+    def load(self, path: str):
+        """
+        Load the configuration from a YAML file.
+        
+        Parameters:
+        -----------
+        path : str
+            Path to load the configuration file from.
+        """
+        import yaml
+        with open(path, "r") as f:
+            config_dict = yaml.safe_load(f)
+            self.__dict__.update(config_dict)

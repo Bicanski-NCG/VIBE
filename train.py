@@ -92,16 +92,19 @@ def get_data_loaders(config):
             num_samples=len(train_weights),
             replacement=True
         )
+        shuffle = False
     else:
         train_weights = torch.ones(len(train_ds), dtype=torch.float32)
+        sampler = None
+        shuffle = True
 
     print(f"Training samples: {len(train_ds)}, Validation samples: {len(valid_ds)}")
 
     train_loader = DataLoader(
         train_ds,
         batch_size=config.batch_size,
-        sampler=sampler if config.stratification_variable else None,
-        shuffle=False if config.stratification_variable else True,
+        sampler=sampler,
+        shuffle=shuffle,
         collate_fn=collate_fn,
         num_workers=config.num_workers,
         prefetch_factor=config.prefetch_factor,
@@ -216,7 +219,7 @@ def run_epoch(loader, model, optimizer, device, is_train, global_step, config):
         drop_prob = config.modality_dropout_prob  # e.g. 0.15 in params.yaml
         if is_train and drop_prob > 0:
             for mod in loader.dataset.modalities:
-                if random.random() < drop_prob:
+                if torch.rand() < drop_prob:
                     # Replace with zeros; keeps tensor shape & device
                     features[mod] = torch.zeros_like(features[mod])
 
@@ -280,40 +283,18 @@ def run_epoch(loader, model, optimizer, device, is_train, global_step, config):
     ), global_step
 
 
-def train_loop(config):
-    """Full training pipeline including early stopping. Returns best_val_epoch, ckpt_dir, model, and full_loader."""
-    
-    # Define x-axis metrics for W&B
-    wandb.define_metric("epoch")
-    wandb.define_metric("retrain_epoch")
-
-    # Summary metrics
-    wandb.define_metric("val/loss", step_metric="epoch", summary="min")
-    wandb.define_metric("val/neg_corr", step_metric="epoch", summary="min")
-
-    run_id = wandb.run.id
-    ckpt_dir = Path("checkpoints") / run_id
-    ckpt_dir.mkdir(parents=True, exist_ok=True)
-
+def train_loop(model, optimizer, scheduler, ckpt_dir, config):
+    """Full training pipeline including early stopping. Returns best_val_epoch, model, and full_loader."""
     # Prepare DataLoaders
     train_loader, valid_loader, full_loader = get_data_loaders(config)
-
-    # Build model and save initial state
-    model = build_model(config)
-    log_model_params(model)
-    save_initial_state(
-        model,
-        ckpt_dir / "initial_model.pt",
-        ckpt_dir / "initial_random_state.pt",
-    )
-
-    # Optimizer & scheduler
-    optimizer, scheduler = create_optimizer_and_scheduler(model, config)
 
     best_val_loss = float("inf")
     patience_counter = 0
     global_step = 0
     best_val_epoch = 0
+
+    # Group-level masker for visual diagnostics
+    group_masker = None
 
     for epoch in range(1, config.epochs + 1):
         train_losses, global_step = run_epoch(
@@ -368,17 +349,18 @@ def train_loop(config):
                 fmri_true, fmri_pred, subj_ids, atlas_paths = collect_predictions(
                     valid_loader, model, config.device
                 )
+                # Load atlas once
+                if not group_masker:
+                    group_masker = load_and_label_atlas(atlas_paths[0])
                 # Group‑level mean voxel‑wise r
                 group_mean_r = np.mean(
                     [voxelwise_pearsonr(t, p) for t, p in zip(fmri_true, fmri_pred)],
                     axis=0,
                 )
-                group_masker = load_and_label_atlas(atlas_paths[0])
                 df_group_roi = roi_table(group_mean_r, "group", group_masker, out_dir=None)
                 # Flatten into a wandb metrics dict: roi/ROI_NAME : mean_r
                 roi_metrics = {f"roi/{row['label']}": row["mean_r"] for _, row in df_group_roi.iterrows()}
                 wandb.log(roi_metrics, step=global_step)
-
 
         scheduler.step()
         current_val = val_losses[1]  # negative correlation as primary metric
@@ -411,6 +393,7 @@ def train_loop(config):
         pickle.dump(
             {
                 "subjects": subj_ids,
+                "atlas_paths": atlas_paths,
                 "fmri_true": fmri_true,   # lists of (T, V) ndarrays
                 "fmri_pred": fmri_pred,
             },
@@ -525,7 +508,7 @@ def train_loop(config):
         wandb.log({f"viz/{Path(png).name}": wandb.Image(png)})
 
     wandb.run.summary["best_val_pearson"] = best_val_loss
-    return best_val_epoch, ckpt_dir, model, full_loader, global_step
+    return best_val_epoch, model, full_loader, global_step
 
 
 def retrain_full(model, full_loader, config, best_val_epoch, ckpt_dir, start_step):
@@ -570,7 +553,7 @@ def retrain_full(model, full_loader, config, best_val_epoch, ckpt_dir, start_ste
         print(f"Epoch {epoch}: Full NegCorr = {full_losses[1]:.4f}")
 
     torch.save(model.state_dict(), ckpt_dir / "final_model.pt")
-    wandb.save(str(ckpt_dir / "final_model.pt"))
+    wandb.log({"final_model_path": str(ckpt_dir / "final_model.pt")})
     print("✅ Final model trained on full dataset and saved.")
 
 
@@ -617,12 +600,41 @@ def main():
     # Merge them back into our local config dict so later code picks them up.
     config = Config(**wandb.config)
 
+    # Build model outside the train loop
+    model = build_model(config)
+    log_model_params(model)
+
+    # Define W&B metrics
+    wandb.define_metric("epoch")
+    wandb.define_metric("retrain_epoch")
+    wandb.define_metric("val/loss", step_metric="epoch", summary="min")
+    wandb.define_metric("val/neg_corr", step_metric="epoch", summary="min")
+
+    # Prepare checkpoint directory
+    ckpt_dir = Path("checkpoints") / wandb.run.id
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save the model’s initial state
+    save_initial_state(
+        model,
+        ckpt_dir / "initial_model.pt",
+        ckpt_dir / "initial_random_state.pt",
+    )
+
+    # Watch the model
+    wandb.watch(model, "val/neg_corr", log_graph=True, log_freq=100)
+
+    # Optimizer & scheduler created outside the loop
+    optimizer, scheduler = create_optimizer_and_scheduler(model, config)
+
     # Persist the config YAML to checkpoints directory
     config_path = Path("checkpoints") / wandb.run.id / "config.yaml"
     config.save(config_path)
 
-    # Train and validate the model
-    best_val_epoch, ckpt_dir, model, full_loader, final_step = train_loop(config)
+    # ── Train and validate ──
+    best_val_epoch, model, full_loader, final_step = train_loop(
+        model, optimizer, scheduler, ckpt_dir, config
+    )
 
     # Retrain the model on the full dataset for the best validation epoch
     retrain_full(model, full_loader, config, best_val_epoch, ckpt_dir, final_step)

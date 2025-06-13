@@ -1,8 +1,13 @@
 from collections import defaultdict
+from pathlib import Path
 import random
 import wandb
 import numpy as np
 import torch
+import yaml
+
+from config import Config
+from model import FMRIModel
 
 def set_seed(seed: int = 42):
     random.seed(seed)
@@ -35,6 +40,7 @@ def load_initial_state(model, path="initial_model.pt", random_path="initial_rand
     torch.set_rng_state(random_state["torch"])
     if torch.cuda.is_available() and random_state["cuda"] is not None:
         torch.cuda.set_rng_state_all(random_state["cuda"])
+
 
 def collect_predictions(loader, model, device):
     """
@@ -76,3 +82,66 @@ def collect_predictions(loader, model, device):
         subj_order.append(sid)
         atlas_paths.append(subj_to_atlas[sid])
     return fmri_true, fmri_pred, subj_order, atlas_paths
+
+
+def load_model_from_ckpt(model_ckpt_path, params_path, device="cuda"):
+    """
+    Rebuild an FMRIModel from a saved state-dict and the YAML parameters file.
+
+    Returns
+    -------
+    model  : torch.nn.Module – the reconstructed model with weights loaded
+    config : Config          – the Config object instantiated from YAML
+    """
+    model_ckpt_path = Path(model_ckpt_path)
+    params_path     = Path(params_path)
+
+    if not model_ckpt_path.exists():
+        raise FileNotFoundError(f"Checkpoint not found: {model_ckpt_path}")
+    if not params_path.exists():
+        raise FileNotFoundError(f"Params file not found: {params_path}")
+
+    # read hyper-parameters
+    with params_path.open("r") as fp:
+        cfg_dict = yaml.safe_load(fp)
+
+    # rebuild Config and model
+    config = Config(**cfg_dict)
+    model  = build_model(config)
+    state  = torch.load(model_ckpt_path, map_location=device)
+    model.load_state_dict(state, strict=True)
+    model.to(device)
+    model.eval()
+    return model, config
+
+
+def build_model(config):
+    """Instantiate the FMRIModel and move to device."""
+    model = FMRIModel(
+        config.input_dims,
+        config.output_dim,
+        # fusion-stage hyper-params
+        fusion_hidden_dim=config.fusion_hidden_dim,
+        fusion_layers=config.fusion_layers,
+        fusion_heads=config.fusion_heads,
+        fusion_dropout=config.fusion_dropout,
+        subject_dropout_prob=config.subject_dropout_prob,
+        use_fusion_transformer=config.use_fusion_transformer,
+        proj_layers=config.proj_layers,
+        fuse_mode=config.fuse_mode,
+        subject_count=config.subject_count,
+        # temporal predictor hyper-params
+        pred_layers=config.pred_layers,
+        pred_heads=config.pred_heads,
+        pred_dropout=config.pred_dropout,
+        rope_pct=config.rope_pct,
+        # HRF-related
+        use_hrf_conv=config.use_hrf_conv,
+        learn_hrf=config.learn_hrf,
+        hrf_size=config.hrf_size,
+        tr_sec=config.tr_sec,
+        # training
+        mask_prob=config.mask_prob,
+    )
+    model.to(config.device)
+    return model

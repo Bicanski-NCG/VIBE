@@ -90,6 +90,14 @@ class FMRI_Dataset(Dataset):
     def __len__(self):
         return len(self.samples)
 
+    def filter_samples(self, filter_fn):
+        """
+        Filters the samples based on a provided filter function.
+        The filter function should take a sample dict and return True if the sample should be included.
+        """
+        self.samples = [s for s in self.samples if filter_fn(s)]
+        return self
+
     def find_feature_file(self, modailty, file_name):
         try:
             return self._feature_index[modailty][file_name]

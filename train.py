@@ -73,6 +73,10 @@ def get_data_loaders(config):
                       noise_std=config.train_noise_std,
                       normalization_stats=norm_stats if config.use_normalization else None,
                       oversample_factor=config.oversample_factor)
+
+    if config.filter_name is not None:
+        filter_fn = lambda sample: sample["name"] not in config.filter_name
+        ds = ds.filter_samples(filter_fn)
     
     print(f"Dataset size: {len(ds)} samples")
 

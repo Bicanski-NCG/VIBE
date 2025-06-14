@@ -6,6 +6,16 @@ from scipy.spatial.distance import cdist # For pairwise distances
 from tqdm import tqdm
 import torch
 
+def get_network_masks(network_names,n_rois = 1000):
+    atlas_data = nilearn.datasets.fetch_atlas_schaefer_2018(n_rois=n_rois)
+
+    nets = atlas_data['labels']
+    networks = np.array([net.decode('utf-8').split('_')[2] for net in nets])
+
+    masks = {net_name: networks==net_name for net_name in network_names}
+
+    return masks
+    
 
 def get_spatial_adjacency_matrix(sigma=0.2, n_rois = 1000):
 
@@ -64,7 +74,9 @@ def get_spatial_adjacency_matrix(sigma=0.2, n_rois = 1000):
     D = adj_spatial_distance/adj_spatial_distance.max()
 
     # scale distances exponentially
-    W = np.exp(-adj_spatial_distance/sigma)
+    W = np.exp((-D**2)/sigma)
+
+    W[W<1e-2]=0.0
 
     #diagonal should be zero
 
@@ -151,4 +163,23 @@ def get_laplacians(sigma=0.2):
 
 def calculate_laplacian(A):
     return torch.eye(A.shape[0]) - A/A.sum(axis=1,keepdim=True)
+
+
+def temporal_Laplacian(n=1000,sigma=8.0):
+
+    W = np.zeros((n,n))
+
+    for i in range(n):
+        for j in range(n):
+            W[i,j] = np.exp((-abs(i-j))/sigma)
+
+    W[W<0.1]=0.0
+
+    A = torch.tensor(W).float()
+
+    Laplacian = calculate_laplacian(A)
+
+    return Laplacian
+
+
      

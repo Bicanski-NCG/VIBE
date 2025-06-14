@@ -192,6 +192,7 @@ class FMRIModel(nn.Module):
         fuse_mode="concat",
         use_hrf_conv=False,
         learn_hrf=False,
+        n_prepend_zeros=10,
     ):
         super().__init__()
         self.encoder = ModalityFusionTransformer(
@@ -214,6 +215,7 @@ class FMRIModel(nn.Module):
 
         self.use_hrf_conv = use_hrf_conv
         self.learn_hrf = learn_hrf
+        self.n_prepend_zeros = n_prepend_zeros
         hrf_size = 8
         tr = 1.49  # or your true TR
 
@@ -240,6 +242,9 @@ class FMRIModel(nn.Module):
         self.mask_prob = mask_prob
 
     def forward(self, features, subject_ids, run_ids, attention_mask):
+        num_pre_post_timepoints = self.n_prepend_zeros
+
+        # Original attention_mask masking logic
         if self.training and self.mask_prob > 0:
             mask = (
                 torch.rand(attention_mask.shape, device=attention_mask.device)
@@ -249,6 +254,25 @@ class FMRIModel(nn.Module):
             attention_mask[mask] = False
 
         fused = self.encoder(features, subject_ids, run_ids)
+
+        # Prepend zeros to fused
+        # TODO: experiment what happens if we put torch.randn here instead of zeros
+        zeros_pre_fused = torch.zeros(
+            fused.shape[:-2] + (num_pre_post_timepoints, fused.shape[-1]),
+            device=fused.device,
+            dtype=fused.dtype,
+        )
+        fused = torch.cat((zeros_pre_fused, fused), dim=-2)
+
+        # Extend attention_mask for prepended zeros (set to False/masked)
+        attention_mask_pre = torch.zeros(
+            attention_mask.shape[:-1] + (num_pre_post_timepoints,),
+            device=attention_mask.device,
+            dtype=torch.bool,
+        )
+        attention_mask = torch.cat((attention_mask_pre, attention_mask), dim=-1)
+
+      
         preds = self.predictor(fused, attention_mask)
 
         if self.use_hrf_conv:
@@ -256,5 +280,10 @@ class FMRIModel(nn.Module):
             preds = F.pad(preds, (7, 0))
             preds = self.hrf_conv(preds)
             preds = preds.transpose(1, 2)
+
+        # Remove the appended zeros from preds
+        preds = preds[..., num_pre_post_timepoints : preds.shape[-2],:] 
+        #preds = preds[..., num_pre_post_timepoints : preds.shape[-2] - num_pre_post_timepoints, :]
+
 
         return preds

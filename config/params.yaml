@@ -3,7 +3,7 @@
 train:
   epochs: 150
   batch_size: 4
-  lr: 0.0001
+  lr: 0.00005
   weight_decay: 0.0001
   device: "cuda:0"
   early_stop_patience: 1
@@ -18,3 +18,8 @@ train:
   val_name: "s06"
   val_run: "all"
   roi_log_interval: 1
+  lambda_net_adj: 0.0001
+  lambda_sp_adj: 0.00001
+  normalize_pred_for_spatial_regularizer: true
+  spatial_sigma: 0.25
+  n_prepend_zeros: 10

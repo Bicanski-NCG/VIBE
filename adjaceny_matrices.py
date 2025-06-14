@@ -3,7 +3,6 @@ import nibabel as nb
 import numpy as np
 from scipy.ndimage import center_of_mass # For finding centroids
 from scipy.spatial.distance import cdist # For pairwise distances
-from tqdm import tqdm
 import torch
 
 def get_network_masks(network_names,n_rois = 1000):
@@ -36,7 +35,7 @@ def get_spatial_adjacency_matrix(sigma=0.2, n_rois = 1000):
 
     centroids_voxel_ordered = []
     valid_labels = []
-    for label in tqdm(range(1, n_rois + 1)):
+    for label in range(1, n_rois + 1):
         roi_mask = (atlas_data_array == label)
         if np.any(roi_mask):
             # center_of_mass returns (z, y, x) for standard numpy array indexing

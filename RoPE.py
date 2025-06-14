@@ -62,9 +62,9 @@ class RoPEMultiheadAttention(nn.Module):
 
 
 class RoPEEncoderLayer(nn.Module):
-    def __init__(self, in_dim, num_heads, dropout):
+    def __init__(self, in_dim, num_heads, dropout, rope_pct: float = 1.0):
         super().__init__()
-        self.self_attn = RoPEMultiheadAttention(in_dim, num_heads, dropout=dropout)
+        self.self_attn = RoPEMultiheadAttention(in_dim, num_heads, rope_pct=rope_pct, dropout=dropout)
         self.norm1 = nn.LayerNorm(in_dim)
         self.ff = nn.Sequential(
             nn.Linear(in_dim, 4 * in_dim),
@@ -87,11 +87,24 @@ class PredictionTransformerRoPE(nn.Module):
                  output_dim=1000,
                  num_layers=1,
                  num_heads=8,
-                 dropout=0.3):
+                 dropout=0.3,
+                 rope_pct: float = 1.0):
+        """
+        x         : [batch, seq_len, input_dim]
+        attn_mask : [batch, seq_len] – **True for real tokens, False for pads**
+
+        Parameters:
+        - input_dim: dimension of input embeddings
+        - output_dim: dimension of output predictions
+        - num_layers: number of transformer layers
+        - num_heads: number of attention heads
+        - dropout: dropout rate
+        - rope_pct: percentage of head dimension to apply RoPE to
+        """
         super().__init__()
         # ← no absolute/learned positional encodings needed
         self.layers = nn.ModuleList([
-            RoPEEncoderLayer(input_dim, num_heads, dropout)
+            RoPEEncoderLayer(input_dim, num_heads, dropout, rope_pct=rope_pct)
             for _ in range(num_layers)
         ])
         self.output_head = nn.Linear(input_dim, output_dim)

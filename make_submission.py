@@ -1,11 +1,10 @@
+import argparse
 import os
+from pathlib import Path
 import glob
 import numpy as np
 import torch
-from fastprogress import progress_bar
-from model import FMRIModel
 import zipfile
-from model import FMRIModel
 from utils import load_model_from_ckpt
 
 
@@ -69,7 +68,8 @@ def predict_fmri_for_test_set(
         )
         sample_counts = np.load(sample_dict_path, allow_pickle=True).item()
 
-        for episode in progress_bar(sample_counts.keys()):
+        for episode in sample_counts.keys():
+            print(f"→  Processing {subj} - {episode}")
             n_samples = sample_counts[episode]
             try:
                 features = load_features_for_episode(
@@ -195,110 +195,42 @@ def predict_fmri_for_season7(
     return output_dict
 
 
-#feature_paths = {
-#    "aud_last": "features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/aud_last", #torch.Size([102, 1280])
-#    "aud_ln_post": "features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/audio_ln_post", #torch.Size([102, 1280])
-#    "conv3d_features": "features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/conv3d_features", #torch.Size([3536, 1280])
-#    "vis_block5": "features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_block5", #torch.Size([3536, 1280])
-#    "vis_block8": "features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_block8", #torch.Size([3536, 1280])
-#    "vis_block12": "features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_block12", #torch.Size([3536, 1280])
-#    "vis_merged": "features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_merged", #torch.Size([884, 2048])
-#    "thinker_12": "features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_12", #torch.Size([1, 984, 2048])
-#    "thinker_24": "features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_24", #torch.Size([1, 984, 2048])
-#    "thinker_36": "features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_36", #torch.Size([1, 984, 2048])
-#    "text": "features/Text/Qwen2.5_7B_Full_tr1.49",
-#    "fast_res3_act": "features/Visual/SlowFast_R101_tr1.49/fast_res3_act",
-#    "fast_stem_act": "features/Visual/SlowFast_R101_tr1.49/fast_stem_act",
-#    "pool_concat": "features/Visual/SlowFast_R101_tr1.49/pool_concat",
-#    "slow_res3_act": "features/Visual/SlowFast_R101_tr1.49/slow_res3_act",
-#    "slow_res5_act": "features/Visual/SlowFast_R101_tr1.49/slow_res5_act",
-#    "slow_stem_act": "features/Visual/SlowFast_R101_tr1.49/slow_stem_act",
-#    "audio_long_context": "features/Audio/Wave2Vec2/features_chunk1.49_len60_before50",
-#    # "audio_mfcc_mono": "features/Audio/LowLevel/_chunk1.49_len4.0_before2.0_nmfcc32_nstats4/mono/movies/",
-#    # "audio_mfcc_stereo": "features/Audio/LowLevel/_chunk1.49_len4.0_before2.0_nmfcc32_nstats4/stereo/movies/",
-#
-#}
-#
-#input_dims = {
-#    "aud_last": 1280 * 2,
-#    #"aud_ln_post": 1280 * 2,
-#    #"conv3d_features": 1280 * 2,
-#    "vis_block5": 1280 * 2,
-#    #"vis_block8": 1280 * 2,
-#    #"vis_block12": 1280 * 2,
-#    "vis_merged": 2048 * 2,
-#    #"thinker_12": 2048 * 2,
-#   # "thinker_24": 2048 * 2,
-#    "thinker_36": 2048 * 2,
-#    "text": 3584,
-#    "fast_res3_act": 2048,
-#    #"fast_stem_act": 1024,
-#    "pool_concat": 9216,
-#    "slow_res3_act": 4096,
-#    #"slow_res5_act": 4096,
-#    #"slow_stem_act": 8192,
-#    #"audio_long_context": 2048,
-#    # "audio_mfcc_mono":int(4*32),
-#    # "audio_mfcc_stereo":int(4*32)
-#
-#}
-#
-#model = FMRIModel(
-#    input_dims,
-#    1000,
-#    # fusion-stage hyper-params
-#    fusion_hidden_dim=256,
-#    fusion_layers=1,
-#    fusion_heads=4,
-#    fusion_dropout=0.3,
-#    subject_dropout_prob=0.0,
-#    use_fusion_transformer=True,
-#    proj_layers=1,
-#    fuse_mode="concat",
-#    subject_count=4,
-#    # temporal predictor hyper-params
-#    pred_layers=3,
-#    pred_heads=8,
-#    pred_dropout=0.3,
-#    rope_pct=1.0,
-#    # HRF-related
-#    use_hrf_conv=False,
-#    learn_hrf=False,
-#    hrf_size=8,
-#    tr_sec=1.49,
-#    # training
-#    mask_prob=0.3,
-#)
+def main():
+    args = argparse.ArgumentParser(description="Make submission for fMRI predictions")
+    args.add_argument("--checkpoint", type=str, help="Checkpoint to load")
+    args = args.parse_args()
+    checkpoint = args.checkpoint
+    if not checkpoint:
+        raise ValueError("Please provide a checkpoint to load.")
+    print(f"Using checkpoint: {checkpoint}")
 
-#model.load_state_dict(torch.load("checkpoints/ex820fiw/final_model.pt"))
-#model.eval()
+    # Load the model from checkpoint
+    model, config, = load_model_from_ckpt(
+        model_ckpt_path=f"checkpoints/{checkpoint}/final_model.pt",
+        params_path=f"checkpoints/{checkpoint}/config.yaml",
+        device="cuda:0",
+    )
+    #model.load_state_dict(torch.load(f"checkpoints/{checkpoint}/final_model.pt"))
+    model.eval()
 
-checkpoint = "ex820fiw"
+    feature_paths = {name: Path(path) / path for name, path in config.feature_paths.items()}
 
-# Load the model from checkpoint
-model, config, = load_model_from_ckpt(
-    model_ckpt_path=f"checkpoints/{checkpoint}/final_model.pt",
-    params_path=f"checkpoints/{checkpoint}/config.yaml",
-    device="cuda:0",
-)
+    print("Starting predictions for fMRI season 7 episodes...")
+    predictions = predict_fmri_for_test_set(
+        model=model,
+        feature_paths=feature_paths,
+        sample_counts_root="data/fmri",
+        normalization_stats=None,
+        device="cuda:0",
+    )
 
-model.eval()
+    output_file = "fmri_predictions_friends_s7.npy"
+    np.save(output_file, predictions, allow_pickle=True)
 
-from pathlib import Path
+    zip_file = "fmri_predictions_friends_s7.zip"
+    with zipfile.ZipFile(zip_file, "w") as zipf:
+        zipf.write("fmri_predictions_friends_s7.npy")
+    print(f"Saved predictions to {zip_file}")
 
-feature_paths = {name: Path(config.features_dir) / path for name, path in config.features.items()}
-
-predictions = predict_fmri_for_test_set(
-    model=model,
-    feature_paths=feature_paths,
-    sample_counts_root="data/fmri",
-    normalization_stats=None,
-    device="cuda:0",
-)
-
-output_file = "fmri_predictions_friends_s7.npy"
-np.save(output_file, predictions, allow_pickle=True)
-
-zip_file = "fmri_predictions_friends_s7.zip"
-with zipfile.ZipFile(zip_file, "w") as zipf:
-    zipf.write("fmri_predictions_friends_s7.npy")
+if __name__ == "__main__":
+    main()

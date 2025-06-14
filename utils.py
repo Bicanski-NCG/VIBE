@@ -109,7 +109,7 @@ def load_model_from_ckpt(model_ckpt_path, params_path, device="cuda"):
     config = Config(**cfg_dict)
     model  = build_model(config)
     state  = torch.load(model_ckpt_path, map_location=device)
-    model.load_state_dict(state, strict=True)
+    model.load_state_dict(state)
     model.to(device)
     model.eval()
     return model, config

@@ -40,6 +40,7 @@ class Config:
     fusion_dropout: float = 0.3
     subject_dropout_prob: float = 0.0
     use_fusion_transformer: bool = True
+    use_run_embeddings: bool = False
     proj_layers: int = 1
     fuse_mode: str = "concat"
     subject_count: int = 4

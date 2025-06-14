@@ -90,6 +90,7 @@ fusion_heads: 4
 fusion_dropout: 0.3
 subject_dropout_prob: 0.0
 use_fusion_transformer: true
+use_run_embeddings: false
 proj_layers: 2
 subject_count: 4
 

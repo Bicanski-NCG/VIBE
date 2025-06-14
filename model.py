@@ -28,6 +28,7 @@ class ModalityFusionTransformer(nn.Module):
         subject_dropout_prob=0.0,
         fuse_mode: str = "concat",
         use_transformer: bool = True,
+        use_run_embeddings: bool = False,
         num_layers_projection: int = 1
     ):
         super().__init__()
@@ -39,7 +40,10 @@ class ModalityFusionTransformer(nn.Module):
 
         self.subject_dropout_prob = subject_dropout_prob
         self.subject_embeddings = nn.Embedding(subject_count + 1, hidden_dim)
-        self.run_embeddings = nn.Embedding(3, hidden_dim)
+
+        self.use_run_embeddings = use_run_embeddings
+        if self.use_run_embeddings:
+            self.run_embeddings = nn.Embedding(3, hidden_dim)
         self.null_subject_index = subject_count
 
         if use_transformer:
@@ -85,10 +89,11 @@ class ModalityFusionTransformer(nn.Module):
         subj_emb = self.subject_embeddings(subject_ids).unsqueeze(1).unsqueeze(2)
         subj_emb = subj_emb.expand(-1, T, 1, -1)
 
-        run_emb = self.run_embeddings(run_ids).unsqueeze(1).unsqueeze(2)
-        run_emb = run_emb.expand(-1, T, 1, -1)
+        if self.use_run_embeddings:
+            run_emb = self.run_embeddings(run_ids).unsqueeze(1).unsqueeze(2)
+            run_emb = run_emb.expand(-1, T, 1, -1)
 
-        x = torch.cat([x, subj_emb, run_emb], dim=2)  # (B, T, num_modalities+2, D)
+        x = torch.cat([x, subj_emb, run_emb], dim=2) if self.use_run_embeddings else torch.cat([x, subj_emb], dim=2)
         x = x.view(B * T, x.shape[2], -1)
 
         fused = self.transformer(x)
@@ -194,6 +199,7 @@ class FMRIModel(nn.Module):
         fusion_dropout=0.3,
         subject_dropout_prob=0.0,
         use_fusion_transformer=True,
+        use_run_embeddings=False,
         proj_layers=1,
         fuse_mode="concat",
         subject_count=4,
@@ -247,11 +253,12 @@ class FMRIModel(nn.Module):
             subject_dropout_prob=subject_dropout_prob,
             fuse_mode=fuse_mode,
             use_transformer=use_fusion_transformer,
+            use_run_embeddings=use_run_embeddings,
             num_layers_projection=proj_layers,
         )
 
         fused_dim = (
-            fusion_hidden_dim * (len(input_dims) + 2)
+            fusion_hidden_dim * (len(input_dims) + 1 + int(use_run_embeddings))
             if fuse_mode == "concat"
             else fusion_hidden_dim
         )

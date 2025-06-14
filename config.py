@@ -40,6 +40,7 @@ class Config:
     fusion_dropout: float = 0.3
     subject_dropout_prob: float = 0.0
     use_fusion_transformer: bool = True
+    use_run_embeddings: bool = False
     proj_layers: int = 1
     fuse_mode: str = "concat"
     subject_count: int = 4
@@ -50,6 +51,7 @@ class Config:
     pred_heads: int = 8
     pred_dropout: float = 0.3
     rope_pct: float = 1.0
+    num_pre_tokens: int = 5
 
     # ─── Spatial Regularization ───
     normalize_pred_for_spatial_regularizer: bool = True

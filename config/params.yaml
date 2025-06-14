@@ -31,6 +31,12 @@ early_stop_patience: 1
 lambda_sample: 0
 lambda_roi: 0
 lambda_mse: 0.01
+lambda_net_adj: 0.0001
+lambda_sp_adj: 0.00001
+
+# Spatial regularizer
+normalize_pred_for_spatial_regularizer: true
+spatial_sigma: 0.25
 
 # L2 regularization of HRF kernel towards canonical SPM form (does not contribute to loss)
 lambda_hrf: 0.001
@@ -106,3 +112,6 @@ use_hrf_conv: false
 learn_hrf: false
 hrf_size: 8
 tr_sec: 1.49
+
+# Padding
+n_prepend_zeros: 10

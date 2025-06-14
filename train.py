@@ -19,8 +19,10 @@ from model import FMRIModel
 from losses import (
     masked_negative_pearson_loss,
     sample_similarity_loss,
-    roi_similarity_loss
+    roi_similarity_loss,   
+    spatial_regularizer_loss
 )
+from adjaceny_matrices import get_laplacians
 from utils import save_initial_state, load_initial_state, set_seed, log_model_params, collect_predictions
 from config import Config
 from viz import (
@@ -160,6 +162,8 @@ def build_model(config):
         learn_hrf=config.learn_hrf,
         hrf_size=config.hrf_size,
         tr_sec=config.tr_sec,
+        # padding
+        n_prepend_zeros=config.n_prepend_zeros,
         # training
         mask_prob=config.mask_prob,
     )
@@ -202,12 +206,20 @@ def create_optimizer_and_scheduler(model, config):
     return optimizer, scheduler
 
 
-def run_epoch(loader, model, optimizer, device, is_train, global_step, config):
+def run_epoch(loader, model, optimizer, device, is_train, global_step,laplacians, config):
     """Run one epoch; return tuple of losses and updated global_step."""
+
+    spatial_laplacian, network_laplacian = laplacians
+    spatial_laplacian = spatial_laplacian.to(config.device)
+    network_laplacian = network_laplacian.to(config.device)
+
     epoch_negative_corr_loss = 0.0
     epoch_sample_loss = 0.0
     epoch_roi_loss = 0.0
     epoch_mse_loss = 0.0
+    epoch_spatial_adjacency_loss = 0.0
+    epoch_network_adjacency_loss = 0.0
+
     model.train() if is_train else model.eval()
 
     for batch in loader:
@@ -234,12 +246,22 @@ def run_epoch(loader, model, optimizer, device, is_train, global_step, config):
             negative_corr_loss = masked_negative_pearson_loss(pred, fmri, attn_mask)
             sample_loss = sample_similarity_loss(pred, fmri, attn_mask)
             roi_loss = roi_similarity_loss(pred, fmri, attn_mask)
+            if config.normalize_pred_for_spatial_regularizer:
+
+                normalized_pred = pred/torch.linalg.norm(pred,dim=-2,keepdim= True)
+            else:
+                normalized_pred = pred
+
+            spatial_adjacency_loss = spatial_regularizer_loss(normalized_pred,spatial_laplacian)
+            network_adjacency_loss = spatial_regularizer_loss(normalized_pred,network_laplacian)
             mse_loss = nn.functional.mse_loss(pred, fmri)
             loss = (
                 negative_corr_loss
                 + config.lambda_sample * sample_loss
                 + config.lambda_roi * roi_loss
                 + config.lambda_mse * mse_loss
+                + config.lambda_sp_adj*spatial_adjacency_loss 
+                + config.lambda_net_adj*network_adjacency_loss
             )
             if getattr(model, "use_hrf_conv", False) and getattr(model, "learn_hrf", False):
                 hrf_dev = model.hrf_conv.weight - model.hrf_prior
@@ -265,12 +287,16 @@ def run_epoch(loader, model, optimizer, device, is_train, global_step, config):
         epoch_sample_loss += sample_loss.item()
         epoch_roi_loss += roi_loss.item()
         epoch_mse_loss += mse_loss.item()
+        epoch_spatial_adjacency_loss+= spatial_adjacency_loss.item()
+        epoch_network_adjacency_loss+= network_adjacency_loss.item()
 
     total_loss = (
         epoch_negative_corr_loss / len(loader)
         + config.lambda_sample * (epoch_sample_loss / len(loader))
         + config.lambda_roi * (epoch_roi_loss / len(loader))
         + config.lambda_mse * (epoch_mse_loss / len(loader))
+        + config.lambda_sp_adj*(epoch_spatial_adjacency_loss/len(loader)) 
+        + config.lambda_net_adj*(epoch_network_adjacency_loss/len(loader))
     )
     return (
         total_loss,
@@ -290,10 +316,10 @@ def train_loop(model, optimizer, scheduler, ckpt_dir, config):
     patience_counter = 0
     global_step = 0
     best_val_epoch = 0
-
+    laplacians= get_laplacians(config.spatial_sigma)
     # Group-level masker for visual diagnostics
     group_masker = None
-
+   
     for epoch in range(1, config.epochs + 1):
         train_losses, global_step = run_epoch(
             train_loader,
@@ -302,6 +328,7 @@ def train_loop(model, optimizer, scheduler, ckpt_dir, config):
             config.device,
             is_train=True,
             global_step=global_step,
+            laplacians=laplacians,
             config=config,
         )
         val_losses, _ = run_epoch(
@@ -311,6 +338,8 @@ def train_loop(model, optimizer, scheduler, ckpt_dir, config):
             config.device,
             is_train=False,
             global_step=None,
+            laplacians=laplacians,
+
             config=config,
         )
 
@@ -520,6 +549,7 @@ def retrain_full(model, full_loader, config, best_val_epoch, ckpt_dir, start_ste
 
     optimizer, scheduler = create_optimizer_and_scheduler(model, config)
     global_step = start_step
+    laplacians = get_laplacians(config.spatial_sigma)
 
     for epoch in range(1, best_val_epoch + 1):
         full_losses, global_step = run_epoch(
@@ -529,6 +559,8 @@ def retrain_full(model, full_loader, config, best_val_epoch, ckpt_dir, start_ste
             config.device,
             is_train=True,
             global_step=global_step,
+            laplacians=laplacians,
+
             config=config,
         )
 

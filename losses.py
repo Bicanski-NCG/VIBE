@@ -1,10 +1,17 @@
 import torch
 import torch.nn.functional as F
 
-def masked_negative_pearson_loss(pred, target, mask, eps=1e-8, zero_center=True):
+def masked_negative_pearson_loss(pred, target, mask, eps=1e-8, zero_center=True,network_mask = None):
+
+
     mask = mask.unsqueeze(-1)
     pred = pred * mask
     target = target * mask
+
+    if network_mask is not None:
+        pred = pred[...,network_mask]
+        target = target[...,network_mask]
+
 
     if zero_center:
         pred_mean = pred.sum(dim=1) / (mask.sum(dim=1) + eps)
@@ -76,3 +83,60 @@ def roi_similarity_loss(pred, target, mask=None, eps=1e-8):
     C_pred   = C_pred   - eye
     C_target = C_target - eye
     return F.mse_loss(C_pred, C_target)
+
+
+
+def spatial_regularizer_loss(pred,Laplacian):
+
+
+    energy = torch.einsum('...i,ij,...j',pred,Laplacian,pred)
+    
+    loss = energy.mean()
+    
+    return loss
+
+
+def temporal_regularizer_loss(pred):
+
+    variation = (pred[:,1:]-pred[:,:-1])**2
+
+    loss = variation.mean()
+
+    second_order_variation = (pred[2:]+ pred[:-2]-2*pred[1:-1])**2
+
+    loss+= second_order_variation.mean()
+
+    return loss
+
+
+def temporal_regularizer_loss_new(pred,Laplacian):
+
+    
+    L = Laplacian[:pred.shape[1],:pred.shape[1]]
+
+    energy = torch.einsum('...ik,ij,...jk',pred,L,pred)
+    
+    loss = energy.mean()
+    
+    return loss
+
+
+
+def network_specific_temporal_regularizer_loss(pred,Laplacians,masks):
+
+    loss = 0.0
+    if Laplacians is None:
+        return torch.zeros((1,),device=pred.device)
+
+    for network in Laplacians.keys():
+        
+        L = Laplacians[network][:pred.shape[1],:pred.shape[1]]
+    
+        activity_in_network = pred[...,masks[network]]
+
+        energy = torch.einsum('...ik,ij,...jk',activity_in_network,L,activity_in_network)
+        
+        loss += energy.mean()
+    
+    return loss
+

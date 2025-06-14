@@ -44,6 +44,7 @@ class Config:
     proj_layers: int = 1
     fuse_mode: str = "concat"
     subject_count: int = 4
+    n_prepend_zeros: int = 10
 
     # ─── Prediction Transformer ───
     pred_layers: int = 3
@@ -51,6 +52,12 @@ class Config:
     pred_dropout: float = 0.3
     rope_pct: float = 1.0
     num_pre_tokens: int = 5
+
+    # ─── Spatial Regularization ───
+    normalize_pred_for_spatial_regularizer: bool = True
+    spatial_sigma: float = 0.25
+    lambda_net_adj: float = 0.0001
+    lambda_sp_adj: float = 0.00001
 
     # ─── HRF ───
     use_hrf_conv: bool = False
@@ -75,6 +82,7 @@ class Config:
     pct_bads: float = 0.1
     max_scatter_points: int = 50000
 
+    
     @staticmethod
     def from_yaml(features_path: str, params_path: str, seed: int, run_name: Optional[str] = None,
                   features_dir: str = "Features", data_dir: str = "fmri", device: str = "cuda") -> 'Config':

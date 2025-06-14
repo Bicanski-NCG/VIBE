@@ -137,7 +137,7 @@ class Config:
         """
         import yaml
         with open(path, "w") as f:
-            yaml.dump(self.__dict__, f, default_flow_style=False)
+            yaml.dump(self.__dict__, f, default_flow_style=False, sort_keys=False)
 
     def load(self, path: str):
         """

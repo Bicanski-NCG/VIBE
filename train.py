@@ -1,5 +1,4 @@
 import argparse
-import yaml
 import random
 import wandb
 from pathlib import Path
@@ -8,13 +7,11 @@ import glob
 import os
 
 import numpy as np
-import pandas as pd
 import torch
 from torch import nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
-from collections import defaultdict
 from scipy.stats import pearsonr
 
 from data import FMRI_Dataset, split_dataset_by_name, collate_fn, make_group_weights
@@ -38,9 +35,6 @@ from viz import (
     plot_pred_vs_true_scatter,
     plot_residual_psd
 )
-
-import nibabel as nib
-from nilearn.maskers import NiftiLabelsMasker
 
 
 def parse_args():

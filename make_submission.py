@@ -90,7 +90,7 @@ def predict_fmri_for_test_set(
             subj_ids = torch.tensor([subj_id]).to(device)
 
             with torch.no_grad():
-                preds = model(features, subj_ids, [0],attention_mask)
+                preds = model(features, subj_ids, [0], attention_mask)
 
             output_dict[subj][episode] = (
                 preds.squeeze(0).cpu().numpy().astype(np.float32)
@@ -198,8 +198,10 @@ def predict_fmri_for_season7(
 def main():
     args = argparse.ArgumentParser(description="Make submission for fMRI predictions")
     args.add_argument("--checkpoint", type=str, help="Checkpoint to load")
+    args.add_argument("--name", type=str, default="fmri_predictions_friends_s7", help="Name of output file")
     args = args.parse_args()
     checkpoint = args.checkpoint
+    name = args.name
     if not checkpoint:
         raise ValueError("Please provide a checkpoint to load.")
     print(f"Using checkpoint: {checkpoint}")
@@ -208,28 +210,26 @@ def main():
     model, config, = load_model_from_ckpt(
         model_ckpt_path=f"checkpoints/{checkpoint}/final_model.pt",
         params_path=f"checkpoints/{checkpoint}/config.yaml",
-        device="cuda:0",
     )
-    #model.load_state_dict(torch.load(f"checkpoints/{checkpoint}/final_model.pt"))
     model.eval()
 
-    feature_paths = {name: Path(path) / path for name, path in config.feature_paths.items()}
+    feature_paths = {name: Path(config.features_dir) / path for name, path in config.features.items()}
 
     print("Starting predictions for fMRI season 7 episodes...")
     predictions = predict_fmri_for_test_set(
         model=model,
         feature_paths=feature_paths,
-        sample_counts_root="data/fmri",
+        sample_counts_root=config.data_dir,
         normalization_stats=None,
-        device="cuda:0",
+        device="cuda",
     )
 
-    output_file = "fmri_predictions_friends_s7.npy"
+    output_file = f"{name}.npy"
     np.save(output_file, predictions, allow_pickle=True)
 
-    zip_file = "fmri_predictions_friends_s7.zip"
+    zip_file = f"{name}.zip"
     with zipfile.ZipFile(zip_file, "w") as zipf:
-        zipf.write("fmri_predictions_friends_s7.npy")
+        zipf.write(f"{name}.npy")
     print(f"Saved predictions to {zip_file}")
 
 if __name__ == "__main__":

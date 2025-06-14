@@ -202,6 +202,7 @@ class FMRIModel(nn.Module):
         pred_heads=8,
         pred_dropout=0.3,
         rope_pct=1.0,
+        num_pre_tokens: int = 5,
         # HRF-related
         use_hrf_conv=False,
         learn_hrf=False,
@@ -255,6 +256,17 @@ class FMRIModel(nn.Module):
             else fusion_hidden_dim
         )
 
+        self.num_pre_tokens = int(num_pre_tokens)
+        if self.num_pre_tokens > 0:
+            # (T_p, D) where T_p == num_pre_tokens
+            self.pre_tokens = nn.Parameter(
+                torch.randn(self.num_pre_tokens, fused_dim) * 0.02
+            )
+        else:
+            # register a placeholder so .to(device) works later
+            self.register_buffer("pre_tokens", torch.empty(0, fused_dim))
+
+
         self.predictor = PredictionTransformerRoPE(
             input_dim=fused_dim,
             output_dim=output_dim,
@@ -300,7 +312,26 @@ class FMRIModel(nn.Module):
             attention_mask[mask] = False
 
         fused = self.encoder(features, subject_ids, run_ids)
+
+        if self.num_pre_tokens > 0:
+            B = fused.size(0)
+            prefix = self.pre_tokens.unsqueeze(0).expand(B, -1, -1)   # [B, T_p, D]
+            fused = torch.cat([prefix, fused], dim=1)                 # [B, T_p+T, D]
+
+            # extend attention mask with valid (=True) entries
+            prefix_mask = torch.ones(
+                B,
+                self.num_pre_tokens,
+                dtype=attention_mask.dtype,
+                device=attention_mask.device,
+            )
+            attention_mask = torch.cat([prefix_mask, attention_mask], dim=1)  # [B, T_p+T]
+
+
         preds = self.predictor(fused, attention_mask)
+
+        if self.num_pre_tokens > 0:
+            preds = preds[:, self.num_pre_tokens :, :] 
 
         if self.use_hrf_conv:
             preds = preds.transpose(1, 2)

@@ -49,6 +49,7 @@ class Config:
     pred_heads: int = 8
     pred_dropout: float = 0.3
     rope_pct: float = 1.0
+    num_pre_tokens: int = 5
 
     # ─── HRF ───
     use_hrf_conv: bool = False

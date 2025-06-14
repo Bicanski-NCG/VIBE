@@ -217,7 +217,7 @@ def run_epoch(loader, model, optimizer, device, is_train, global_step, config):
         drop_prob = config.modality_dropout_prob  # e.g. 0.15 in params.yaml
         if is_train and drop_prob > 0:
             for mod in loader.dataset.modalities:
-                if torch.rand() < drop_prob:
+                if float(torch.rand(1)) < drop_prob:
                     # Replace with zeros; keeps tensor shape & device
                     features[mod] = torch.zeros_like(features[mod])
 

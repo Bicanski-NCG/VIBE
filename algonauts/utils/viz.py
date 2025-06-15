@@ -27,6 +27,15 @@ from nilearn.maskers import NiftiLabelsMasker
 from scipy.signal import welch
 from scipy.stats import pearsonr
 import pandas as pd
+import wandb
+import torch
+import glob
+
+# ————————————————————————
+# Local imports
+# ————————————————————————
+from algonauts.utils.utils import get_atlas
+from algonauts.utils import logger, collect_predictions
 
 # ————————————————————————
 # Module-level constants
@@ -68,7 +77,7 @@ def load_and_label_atlas(atlas_path: os.PathLike | str,
     NiftiLabelsMasker
         Ready-fit masker with `.labels` attribute.
     """
-    schaefer = datasets.fetch_atlas_schaefer_2018(n_rois=n_rois)
+    schaefer = get_atlas(n_rois=n_rois)
     all_labels = np.insert(schaefer.labels, 0,
                            "7Networks_NA_Background_0").astype(str)
     network_labels = [lab.split("_")[2] for lab in all_labels]
@@ -327,3 +336,112 @@ def plot_residual_psd(y_true: np.ndarray,
     fig.savefig(path, dpi=150)
     plt.close(fig)
     return path
+
+def plot_diagnostics(model, loader, config, out_dir):
+    """Generate subject‑level and group‑level visual diagnostics and log them to W&B."""
+    fmri_true, fmri_pred, subj_ids, atlas_paths = collect_predictions(loader, model, config.device)
+
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Persist validation predictions for later analysis
+    pred_path = out_dir / "val_predictions.pkl.gz"
+    with gzip.open(pred_path, "wb") as f:
+        pickle.dump(
+            {
+                "subjects": subj_ids,
+                "atlas_paths": atlas_paths,
+                "fmri_true": fmri_true,   # lists of (T, V) ndarrays
+                "fmri_pred": fmri_pred,
+            },
+            f,
+            protocol=pickle.HIGHEST_PROTOCOL,
+        )
+
+    # ----- Per‑subject diagnostics -----
+    for true, pred, sid, atlas_path in zip(fmri_true, fmri_pred, subj_ids, atlas_paths):
+        logger.info(f"📊 Diagnostics for subject {sid} …")
+
+        r = voxelwise_pearsonr(true, pred)
+
+        masker = load_and_label_atlas(atlas_path)
+
+        plot_glass_brain(r, sid, masker, out_dir=str(out_dir))
+
+        plot_corr_histogram(r, sid, out_dir=str(out_dir))
+
+        df_roi = roi_table(r, sid, masker, out_dir=str(out_dir))
+        table_roi = wandb.Table(dataframe=df_roi.astype({"mean_r": float}))
+        bar_chart = wandb.plot.bar(
+            table_roi,
+            "label",      # x‑axis
+            "mean_r",     # y‑axis
+            title=f"ROI mean Pearson r – {sid}",
+        )
+        wandb.log({f"viz/roi_bar_{sid}": bar_chart}, commit=False)
+
+        r_t = np.array([pearsonr(true[t], pred[t])[0] for t in range(true.shape[0])])
+        plot_time_correlation(r_t, sid, out_dir=str(out_dir))
+
+        plot_glass_bads(true, pred, sid, masker, out_dir=str(out_dir), pct_bads=config.pct_bads)
+
+        plot_residual_glass(true, pred, sid, masker, out_dir=str(out_dir))
+
+        plot_pred_vs_true_scatter(true, pred, sid, out_dir=str(out_dir))
+
+        plot_residual_psd(true, pred, sid, out_dir=str(out_dir), fs=1/1.49)
+
+    # ----- Group diagnostics -----
+    logger.info("📊 Group diagnostics …")
+    group_mean_r = np.mean([voxelwise_pearsonr(true, pred) for true, pred in zip(fmri_true, fmri_pred)], axis=0)
+    group_masker = load_and_label_atlas(atlas_paths[0])  # use first atlas for group
+
+    plot_glass_brain(group_mean_r, "group", group_masker, out_dir=str(out_dir))
+
+    plot_corr_histogram(group_mean_r, "group", out_dir=str(out_dir))
+
+    df_group_roi = roi_table(group_mean_r, "group", group_masker, out_dir=str(out_dir))
+    table_roi = wandb.Table(dataframe=df_group_roi.astype({"mean_r": float}))
+    bar_chart = wandb.plot.bar(
+        table_roi,
+        "label",       # x‑axis
+        "mean_r",      # y‑axis
+        title="Group ROI mean Pearson r",
+    )
+    wandb.log({"viz/roi_bar_group": bar_chart}, commit=False)
+
+    r_t_list = [
+        np.array([pearsonr(pred[t], true[t])[0]
+                for t in range(true.shape[0])])
+        for true, pred in zip(fmri_true, fmri_pred)
+    ]
+    max_T   = max(arr.size for arr in r_t_list)
+    r_t_mat = np.full((len(r_t_list), max_T), np.nan)
+    for i, arr in enumerate(r_t_list):
+        r_t_mat[i, :arr.size] = arr
+
+    group_r_t = np.nanmean(r_t_mat, axis=0)   # (max_T,)
+    plot_time_correlation(group_r_t, "group", out_dir=str(out_dir))
+
+    group_res_true = np.concatenate([t for t in fmri_true], 0)
+    group_res_pred = np.concatenate([p for p in fmri_pred], 0)
+    plot_residual_glass(group_res_true, group_res_pred, "group", group_masker, out_dir=str(out_dir))
+
+    plot_glass_bads(
+        group_res_true,
+        group_res_pred,
+        "group",
+        group_masker,
+        out_dir=str(out_dir),
+        pct_bads=config.pct_bads
+    )
+
+    plot_pred_vs_true_scatter(
+        group_res_true, group_res_pred, "group", out_dir=str(out_dir), max_points=config.max_scatter_points
+    )
+
+    plot_residual_psd(group_res_true, group_res_pred, "group", out_dir=str(out_dir), fs=1/1.49)
+
+    # Log every png
+    for png in glob.glob(str(out_dir / "*.png")):
+        wandb.log({f"viz/{Path(png).name}": wandb.Image(png)}, commit=False)

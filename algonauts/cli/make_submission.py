@@ -5,7 +5,7 @@ import glob
 import numpy as np
 import torch
 import zipfile
-from utils import load_model_from_ckpt
+from algonauts.models import load_model_from_ckpt
 
 
 def normalize_feature(x, mean, std):
@@ -197,19 +197,19 @@ def predict_fmri_for_season7(
 
 def main():
     args = argparse.ArgumentParser(description="Make submission for fMRI predictions")
-    args.add_argument("--checkpoint", type=str, help="Checkpoint to load")
-    args.add_argument("--name", type=str, default="fmri_predictions_friends_s7", help="Name of output file")
+    args.add_argument("--checkpoint", type=str, help="Checkpoint to load", required=True)
+    args.add_argument("--name", type=str, default=None, help="Name of output file")
     args = args.parse_args()
     checkpoint = args.checkpoint
-    name = args.name
+    name = args.name if args.name else checkpoint
     if not checkpoint:
         raise ValueError("Please provide a checkpoint to load.")
     print(f"Using checkpoint: {checkpoint}")
 
     # Load the model from checkpoint
     model, config, = load_model_from_ckpt(
-        model_ckpt_path=f"checkpoints/{checkpoint}/final_model.pt",
-        params_path=f"checkpoints/{checkpoint}/config.yaml",
+        model_ckpt_path=f"data/outputs/checkpoints/{checkpoint}/final_model.pt",
+        params_path=f"data/outputs/checkpoints/{checkpoint}/config.yaml",
     )
     model.eval()
 
@@ -224,12 +224,14 @@ def main():
         device="cuda",
     )
 
-    output_file = f"{name}.npy"
+    path = Path("data/outputs/submissions")
+    path.mkdir(parents=True, exist_ok=True)
+    output_file = path / f"{name}.npy"
     np.save(output_file, predictions, allow_pickle=True)
 
-    zip_file = f"{name}.zip"
+    zip_file = path / f"{name}.zip"
     with zipfile.ZipFile(zip_file, "w") as zipf:
-        zipf.write(f"{name}.npy")
+        zipf.write(output_file, f"{name}.npy")
     print(f"Saved predictions to {zip_file}")
 
 if __name__ == "__main__":

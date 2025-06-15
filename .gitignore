@@ -15,15 +15,10 @@ wheels/
 .ipynb_checkpoints/
 
 # Data files
-fmri/
-wandb/
-job_logs/
-features/
-data/
-checkpoints/
-scripts/*
-Features/
-
-# Ignore output files
-*.npy
-*.zip
+data/raw/fmri/*
+data/raw/stimuli/*
+data/features/*
+data/outputs/checkpoints/*
+data/outputs/submissions/*
+data/outputs/wandb/*
+data/outputs/job_logs/*

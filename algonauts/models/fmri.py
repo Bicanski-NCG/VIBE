@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from scipy.stats import gamma
-from RoPE import PredictionTransformerRoPE
+from algonauts.models.rope import PredictionTransformerRoPE
 
 
 def spm_hrf(tr: float, size: int):

@@ -13,7 +13,17 @@ dependencies = [
     "matplotlib>=3.10.1",
     "nilearn>=0.10.4",
     "numpy==1.23.5",
+    "pytest>=8.4.0",
     "pyyaml>=6.0.2",
     "torch>=2.6.0",
     "wandb>=0.19.9",
 ]
+
+[tool.setuptools]
+packages = ["algonauts"]
+
+[project.scripts]
+algonauts-train   = "algonauts.cli.train:main"
+algonauts-retrain = "algonauts.cli.retrain:main"
+algonauts-fit     = "algonauts.cli.fit:main"
+algonauts-submit  = "algonauts.cli.make_submission:main"

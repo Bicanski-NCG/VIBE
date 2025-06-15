@@ -84,9 +84,6 @@ def get_spatial_adjacency_matrix(sigma=0.2, n_rois = 1000):
     return W
 
 
-
-
-
 def get_network_adjacency_matrix(n_rois = 1000):
     atlas_data = nilearn.datasets.fetch_atlas_schaefer_2018(n_rois=n_rois)
 

@@ -318,7 +318,7 @@ class FMRIModel(nn.Module):
         rope_pct=1.0,
         num_pre_tokens: int = 5,
         #Graph concolver
-        pad_length = 600, # this has to be larger than any time-series in the data
+        pad_length = 650, # this has to be larger than any time-series in the data
         # HRF-related
         use_hrf_conv=False,
         learn_hrf=False,
@@ -394,7 +394,7 @@ class FMRIModel(nn.Module):
             rope_pct=rope_pct,
         )
 
-        self.graph_convoler = FixedNetworkGraphAttention(dim = pad_length,adjacency_matrix=adjacency_matrix)
+        self.graph_convolver = FixedNetworkGraphAttention(dim = pad_length,adjacency_matrix=adjacency_matrix)
 
         self.n_prepend_zeros = n_prepend_zeros
         

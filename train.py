@@ -22,7 +22,7 @@ from losses import (
     roi_similarity_loss,   
     spatial_regularizer_loss
 )
-from adjaceny_matrices import get_laplacians
+from adjaceny_matrices import get_laplacians,get_spatial_adjacency_matrix
 from utils import save_initial_state, load_initial_state, set_seed, log_model_params, collect_predictions
 from config import Config
 from viz import (
@@ -137,11 +137,12 @@ def get_data_loaders(config):
     return train_loader, valid_loader, full_loader
 
 
-def build_model(config):
+def build_model(config,adjacency_matrix):
     """Instantiate the FMRIModel and move to device."""
     model = FMRIModel(
         config.input_dims,
         config.output_dim,
+        adjacency_matrix=adjacency_matrix,
         # fusion-stage hyper-params
         fusion_hidden_dim=config.fusion_hidden_dim,
         fusion_layers=config.fusion_layers,
@@ -630,8 +631,10 @@ def main():
     # Merge them back into our local config dict so later code picks them up.
     config = Config(**wandb.config)
 
+    adjacency_matrix =get_spatial_adjacency_matrix(sigma=config.spatial_sigma)
+    adjacency_matrix[adjacency_matrix<1e-1]=0.0
     # Build model outside the train loop
-    model = build_model(config)
+    model = build_model(config,adjacency_matrix=adjacency_matrix)
     log_model_params(model)
 
     # Define W&B metrics

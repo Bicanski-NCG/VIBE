@@ -36,7 +36,7 @@ lambda_sp_adj: 0.00001
 
 # Spatial regularizer
 normalize_pred_for_spatial_regularizer: true
-spatial_sigma: 0.25
+spatial_sigma: 0.003
 
 # L2 regularization of HRF kernel towards canonical SPM form (does not contribute to loss)
 lambda_hrf: 0.001
@@ -105,7 +105,7 @@ pred_layers: 3
 pred_heads: 8
 pred_dropout: 0.3
 rope_pct: 1.0
-num_pre_tokens: 5
+num_pre_tokens: 0
 
 # HRF convolution hyperparameters
 use_hrf_conv: false

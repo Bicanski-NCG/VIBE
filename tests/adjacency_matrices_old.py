@@ -196,7 +196,7 @@ def get_network_adjacency_matrix(n_rois = 1000):
 
 
 
-def get_laplacians(sigma=0.2,use_knn_spatial_adjacency = False):
+def get_laplacians(sigma=0.2, use_knn_spatial_adjacency = False):
 
 
     if use_knn_spatial_adjacency:

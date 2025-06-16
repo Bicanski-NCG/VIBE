@@ -69,7 +69,7 @@ To intstall the python env, follow these steps:
 
 ## Setup cluster
 
-To get started with running the model on the cluster, first make a copy of the `setup_env.sh.example` file and edit the paths to data directories in that file:
+To get started with running the model on the MPCDF Raven cluster, first make a copy of the `env.sh.example` file as `env.sh` and edit the paths to data directories in that file:
 ```
 #!/bin/bash
 
@@ -125,7 +125,7 @@ Parameters and features are loaded from the `params.yaml` and `features.yaml` fi
 To start full retrain loop, run `algonauts-retrain`, or start a batch job with `scripts/retrain.sh`.
 
 ```
-usage: algonauts-retrain [-h] [--checkpoint CHECKPOINT] [--checkpoint_dir CHECKPOINT_DIR] [--wandb_project WANDB_PROJECT] [--device DEVICE] [--diagnostics]
+usage: algonauts-retrain [-h] [--checkpoint CHECKPOINT] [--output_dir OUTPUT_DIR] [--wandb_project WANDB_PROJECT] [--device DEVICE] [--diagnostics]
 
 Retrain a model on the full dataset after initial training
 
@@ -133,12 +133,12 @@ options:
   -h, --help            show this help message and exit
   --checkpoint CHECKPOINT
                         Model checkpoint (same as wandb run ID)
-  --checkpoint_dir CHECKPOINT_DIR
-                        Directory containing checkpoints, overrides CHECKPOINT_DIR environment variable
+  --output_dir OUTPUT_DIR
+                        Root directory for outputs & checkpoints (default $OUTPUT_DIR or data/outputs)
   --wandb_project WANDB_PROJECT
                         W&B project name
   --device DEVICE       Device to use for training (default: cuda)
-  --no_diagnostics      Skip diagnostics after retraining
+  --diagnostics         Plot diagnostics after retraining
 ```
 
 ## Fit model
@@ -146,25 +146,26 @@ options:
 The `algonauts-fit` command launches training and retraining sequentially for the same model.
 
 ```
-usage: algonauts-fit [-h] [--features FEATURES] [--features_dir FEATURES_DIR] [--data_dir DATA_DIR] [--checkpoint_dir CHECKPOINT_DIR] [--params PARAMS] [--seed SEED] [--name NAME] [--device DEVICE] [--wandb_project WANDB_PROJECT] [--diagnostics]
+usage: algonauts-fit [-h] [--features FEATURES] [--params PARAMS] [--features_dir FEATURES_DIR] [--data_dir DATA_DIR] [--output_dir OUTPUT_DIR] [--seed SEED] [--name NAME] [--device DEVICE]
+                     [--wandb_project WANDB_PROJECT] [--diagnostics]
 
 Fit a model to the dataset
 
 options:
   -h, --help            show this help message and exit
-  --features FEATURES   Path to features YAML file (default: configs/features.yaml)
-  --params PARAMS       Path to training parameters YAML file (default: configs/params.yaml)
+  --features FEATURES   Path to features YAML file
+  --params PARAMS       Path to training parameters YAML file
   --features_dir FEATURES_DIR
-                        Directory for features, overrides FEATURES_DIR environment variable
-  --data_dir DATA_DIR   Directory for fMRI data, overrides DATA_DIR environment variable
-  --checkpoint_dir CHECKPOINT_DIR
-                        Directory containing checkpoints, overrides CHECKPOINT_DIR environment variable
+                        Directory with extracted features (default $FEATURES_DIR or data/features)
+  --data_dir DATA_DIR   Directory with raw fMRI data (default $DATA_DIR or data/raw/fmri)
+  --output_dir OUTPUT_DIR
+                        Root directory for outputs & checkpoints (default $OUTPUT_DIR or data/outputs)
   --seed SEED           Random seed for reproducibility
   --name NAME           Run name for W&B
   --device DEVICE       Device to use for training (default: cuda)
   --wandb_project WANDB_PROJECT
                         W&B project name
-  --no_diagnostics      Skip diagnostics after training and retraining
+  --diagnostics         Plot diagnostics after training
 ```
 
 ## Running a parameter sweep
@@ -213,7 +214,7 @@ This will launch 16 nodes for 12 hours to explore the parameter space. To stop t
 To make a submisison, run the `algonauts-submit` or the corresponding batch script.
 
 ```
-usage: algonauts-submit [-h] --checkpoint CHECKPOINT [--name NAME]
+usage: algonauts-submit [-h] --checkpoint CHECKPOINT [--name NAME] [--output_dir OUTPUT_DIR]
 
 Make submission for fMRI predictions
 
@@ -222,6 +223,8 @@ options:
   --checkpoint CHECKPOINT
                         Checkpoint to load
   --name NAME           Name of output file
+  --output_dir OUTPUT_DIR
+                        Root directory for outputs & checkpoints (default $OUTPUT_DIR or data/outputs)
 ```
 
 Pass the `--checkpoint CHECKPOINT` option to the script to specify which model to make predictions from. The checkpoint is the WandB ID of the run. The script will load the fully trained model, and use that to make predictions on season 7 of friends.

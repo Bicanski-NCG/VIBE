@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import zipfile
 from algonauts.models import load_model_from_ckpt
+from algonauts.utils import ensure_paths_exist
 
 
 def normalize_feature(x, mean, std):
@@ -199,17 +200,35 @@ def main():
     args = argparse.ArgumentParser(description="Make submission for fMRI predictions")
     args.add_argument("--checkpoint", type=str, help="Checkpoint to load", required=True)
     args.add_argument("--name", type=str, default=None, help="Name of output file")
+    args.add_argument("--output_dir", default=None, type=str,
+                      help="Root directory for outputs & checkpoints "
+                           "(default $OUTPUT_DIR or data/outputs)")
     args = args.parse_args()
+
     checkpoint = args.checkpoint
     name = args.name if args.name else checkpoint
     if not checkpoint:
         raise ValueError("Please provide a checkpoint to load.")
     print(f"Using checkpoint: {checkpoint}")
 
+    output_root = Path(args.output_dir or os.getenv("OUTPUT_DIR", "data/outputs"))
+    submission_dir = output_root / "submissions"
+    checkpoint_dir = output_root / "checkpoints" / checkpoint
+    final_model_path = checkpoint_dir / "final_model.pt"
+    config_path = checkpoint_dir / "config.yaml"
+
+    ensure_paths_exist(
+        (output_root, "output_dir"),
+        (submission_dir, "submission_dir"),
+        (checkpoint_dir, "checkpoint_dir"),
+        (final_model_path, "final_model.pt"),
+        (config_path, "config.yaml"),
+    )
+
     # Load the model from checkpoint
     model, config, = load_model_from_ckpt(
-        model_ckpt_path=f"data/outputs/checkpoints/{checkpoint}/final_model.pt",
-        params_path=f"data/outputs/checkpoints/{checkpoint}/config.yaml",
+        model_ckpt_path=final_model_path,
+        params_path=config_path,
     )
     model.eval()
 
@@ -224,12 +243,10 @@ def main():
         device="cuda",
     )
 
-    path = Path("data/outputs/submissions")
-    path.mkdir(parents=True, exist_ok=True)
-    output_file = path / f"{name}.npy"
+    output_file = submission_dir / f"{name}.npy"
     np.save(output_file, predictions, allow_pickle=True)
 
-    zip_file = path / f"{name}.zip"
+    zip_file = submission_dir / f"{name}.zip"
     with zipfile.ZipFile(zip_file, "w") as zipf:
         zipf.write(output_file, f"{name}.npy")
     print(f"Saved predictions to {zip_file}")

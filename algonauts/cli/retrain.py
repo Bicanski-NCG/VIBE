@@ -7,7 +7,7 @@ import os
 from algonauts.data import get_full_loader
 from algonauts.models import load_model_from_ckpt, load_initial_state
 from algonauts.training import create_optimizer_and_scheduler, full_loop
-from algonauts.utils import Config, logger
+from algonauts.utils import logger, ensure_paths_exist
 from algonauts.utils.viz import plot_diagnostics
 
 
@@ -19,8 +19,9 @@ def main(args=None, run_id=None, n_epochs=100):
         )
         parser.add_argument("--checkpoint", type=str, default=os.getenv("ALGONAUTS_RUN_ID", None),
                             help="Model checkpoint (same as wandb run ID)")
-        parser.add_argument("--checkpoint_dir", type=str, default=None,
-                            help="Directory containing checkpoints")
+        parser.add_argument("--output_dir", default=None, type=str,
+                            help="Root directory for outputs & checkpoints "
+                                 "(default $OUTPUT_DIR or data/outputs)")
         parser.add_argument("--wandb_project", type=str, default="fmri-model",
                             help="W&B project name")
         parser.add_argument("--device", type=str, default="cuda",
@@ -32,22 +33,32 @@ def main(args=None, run_id=None, n_epochs=100):
         checkpoint = args.checkpoint
     else:
         checkpoint = run_id or args.checkpoint or os.getenv("ALGONAUTS_RUN_ID", None)
-    checkpoint_dir = args.checkpoint_dir or os.getenv("CHECKPOINTS_DIR", "data/outputs/checkpoints")
-    ckpt_dir = Path(checkpoint_dir) / checkpoint
 
     if not checkpoint:
         raise ValueError("Please provide a checkpoint to load.")
-    
+
+
+    output_dir = Path(args.output_dir or os.getenv("OUTPUT_DIR", "data/outputs"))
+    ckpt_dir = output_dir / 'checkpoints' / checkpoint
+    model_path = ckpt_dir / "initial_model.pt"
+    params_path = ckpt_dir / "config.yaml"
+    ensure_paths_exist(
+        (ckpt_dir,    "checkpoint_dir"),
+        (output_dir,  "output_dir"),
+        (model_path,  "initial_model.pt"),
+        (params_path, "config.yaml"),
+    )
+
     # Continue wandb run from the checkpoint
     wandb.init(id=checkpoint, resume="must", project=args.wandb_project,
-               dir="data/outputs/wandb")
+               dir=output_dir / "wandb")
     
     with logger.step("📦 Loading checkpoint and config …"):
         try:
             # Load the model and config from the checkpoint
             model, config = load_model_from_ckpt(
-                model_ckpt_path=ckpt_dir / "initial_model.pt",
-                params_path=ckpt_dir / "config.yaml",
+                model_ckpt_path=model_path,
+                params_path=params_path,
             )
         except Exception as e:
             raise RuntimeError(f"Failed to load model from checkpoint {checkpoint}: {e}")

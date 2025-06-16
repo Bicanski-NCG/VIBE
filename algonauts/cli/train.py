@@ -8,9 +8,8 @@ import torch
 from algonauts.data import get_train_val_loaders
 from algonauts.models import save_initial_state, build_model
 from algonauts.training import train_val_loop, create_optimizer_and_scheduler
-from algonauts.utils import Config, set_seed
+from algonauts.utils import logger, Config, set_seed, ensure_paths_exist
 from algonauts.utils.viz import plot_diagnostics
-from algonauts import logger
 
 torch.backends.cudnn.enabled = True  # Enable cuDNN for better performance
 torch.backends.cudnn.benchmark = True  # Enable for faster training on fixed input sizes
@@ -23,14 +22,20 @@ def main(args=None):
     with logger.step("🔧 Parsing CLI arguments and setting seed..."):
         if not args:
             parser = argparse.ArgumentParser(description="Training entrypoint")
+            # ---- standard path flags ----
             parser.add_argument("--features", default=None, type=str,
-                                help="Path to features YAML file")
-            parser.add_argument("--features_dir", default=None, type=str,
-                                help="Directory for features")
-            parser.add_argument("--data_dir", default=None, type=str,
-                                help="Directory for fMRI data")
+                                help="Path to feature-set YAML")
             parser.add_argument("--params", default=None, type=str,
-                                help="Path to training parameters YAML file")
+                                help="Path to training-parameter YAML")
+            parser.add_argument("--features_dir", default=None, type=str,
+                                help="Directory with extracted features "
+                                     "(default $FEATURES_DIR or data/features)")
+            parser.add_argument("--data_dir", default=None, type=str,
+                                help="Directory with raw fMRI data "
+                                     "(default $DATA_DIR or data/raw/fmri)")
+            parser.add_argument("--output_dir", default=None, type=str,
+                                help="Root directory for outputs & checkpoints "
+                                     "(default $OUTPUT_DIR or data/outputs)")
             parser.add_argument("--seed", default=None, type=int,
                                 help="Random seed for reproducibility")
             parser.add_argument("--name", default=None, type=str,
@@ -60,28 +65,30 @@ def main(args=None):
     # Same for dirs 
     features_dir = args.features_dir or os.getenv("FEATURES_DIR", "data/features")
     data_dir = args.data_dir or os.getenv("DATA_DIR", "data/raw/fmri")
+    output_dir = args.output_dir or os.getenv("OUTPUT_DIR", "data/outputs")
 
     features_path = Path(features_path)
     params_path = Path(params_path)
-    if not features_path.exists():
-        raise FileNotFoundError(f"Features YAML file not found: {features_path}")
-    if not params_path.exists():
-        raise FileNotFoundError(f"Parameters YAML file not found: {params_path}")
-    if not Path(features_dir).exists():
-        raise FileNotFoundError(f"Features directory not found: {features_dir}")
-    if not Path(data_dir).exists():
-        raise FileNotFoundError(f"Data directory not found: {data_dir}")
-    
+    features_dir = Path(features_dir)
+    data_dir = Path(data_dir)
+    output_dir = Path(output_dir)
+    ensure_paths_exist(
+        (features_path, "features YAML"),
+        (params_path,   "params YAML"),
+        (features_dir,  "features_dir"),
+        (data_dir,      "data_dir"),
+        (output_dir,    "output_dir"),
+    )
     logger.info("✅ Paths validated.")
 
     # -------------------- CONFIG & W&B SETUP --------------------
     with logger.step("📄 Loading config and initializing W&B..."):
         # Load config from YAML files
         config = Config.from_yaml(features_path, params_path, chosen_seed, args.name,
-                                features_dir, data_dir, args.device)
+                                  features_dir, data_dir, args.device)
 
         wandb.init(project="fmri-model", config=vars(config), 
-                   name=config.run_name, dir="data/outputs/wandb")
+                   name=config.run_name, dir=output_dir / "wandb")
 
         # If running a W&B sweep, wandb.config contains overridden hyperparameters.
         # Merge them back into our local config dict so later code picks them up.
@@ -103,7 +110,7 @@ def main(args=None):
         run_id = wandb.run.id
         logger.info(f"Run ID: {run_id}")
         # Create a directory for checkpoints
-        ckpt_dir = Path("data/outputs/checkpoints") / run_id
+        ckpt_dir = output_dir / "checkpoints" / run_id
         ckpt_dir.mkdir(parents=True, exist_ok=True)
 
         # Save the model’s initial state

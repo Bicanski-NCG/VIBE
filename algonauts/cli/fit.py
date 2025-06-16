@@ -1,8 +1,8 @@
 import wandb
 import argparse
 import os
-import subprocess
 from algonauts.utils import logger
+from algonauts.utils import ensure_paths_exist
 from algonauts.cli.train import main as train_main
 from algonauts.cli.retrain import main as retrain_main
 
@@ -11,14 +11,17 @@ def main():
     parser = argparse.ArgumentParser(description="Fit a model to the dataset")
     parser.add_argument("--features", default=None, type=str,
                         help="Path to features YAML file")
-    parser.add_argument("--features_dir", default=None, type=str,
-                        help="Directory for features")
-    parser.add_argument("--data_dir", default=None, type=str,
-                        help="Directory for fMRI data")
-    parser.add_argument("--checkpoint_dir", type=str, default=None,
-                        help="Directory containing checkpoints")
     parser.add_argument("--params", default=None, type=str,
                         help="Path to training parameters YAML file")
+    parser.add_argument("--features_dir", default=None, type=str,
+                        help="Directory with extracted features "
+                             "(default $FEATURES_DIR or data/features)")
+    parser.add_argument("--data_dir", default=None, type=str,
+                        help="Directory with raw fMRI data "
+                             "(default $DATA_DIR or data/raw/fmri)")
+    parser.add_argument("--output_dir", type=str, default=None,
+                        help="Root directory for outputs & checkpoints "
+                             "(default $OUTPUT_DIR or data/outputs)")
     parser.add_argument("--seed", default=None, type=int,
                         help="Random seed for reproducibility")
     parser.add_argument("--name", default=None, type=str,
@@ -30,6 +33,16 @@ def main():
     parser.add_argument("--diagnostics", action="store_true",
                         help="Plot diagnostics after training", default=True)
     args = parser.parse_known_args()[0]
+
+    features_dir = args.features_dir or os.getenv("FEATURES_DIR", "data/features")
+    data_dir = args.data_dir or os.getenv("DATA_DIR", "data/raw/fmri")
+    output_dir = args.output_dir or os.getenv("OUTPUT_DIR", "data/outputs")
+
+    ensure_paths_exist(
+        (features_dir, "features_dir"),
+        (data_dir,     "data_dir"),
+        (output_dir,   "output_dir"),
+    )
 
     # Run the training command
     with logger.step("🚀 Starting training..."):

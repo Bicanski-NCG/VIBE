@@ -5,6 +5,7 @@ build/
 dist/
 wheels/
 *.egg-info
+.pytest_cache/
 
 # Virtual environments
 *.venv
@@ -22,3 +23,10 @@ data/outputs/checkpoints/*
 data/outputs/submissions/*
 data/outputs/wandb/*
 data/outputs/job_logs/*
+
+# legacy data
+Features/
+fmri/
+
+# ignore env script
+env.sh

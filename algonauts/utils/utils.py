@@ -1,15 +1,10 @@
 from collections import defaultdict
 from pathlib import Path
 import random
-import wandb
 import numpy as np
 import torch
-import yaml
 from functools import lru_cache
 from nilearn.datasets import fetch_atlas_schaefer_2018
-
-from algonauts.utils.config import Config
-from algonauts.models.fmri import FMRIModel
 
 
 @lru_cache(maxsize=None) # We only ever use one atlas size
@@ -68,3 +63,26 @@ def collect_predictions(loader, model, device):
         subj_order.append(sid)
         atlas_paths.append(subj_to_atlas[sid])
     return fmri_true, fmri_pred, subj_order, atlas_paths
+
+
+def ensure_paths_exist(*pairs):
+    """
+    Assert that every provided path exists, otherwise raise FileNotFoundError.
+
+    Parameters
+    ----------
+    *pairs : tuple[str | Path, str]
+        Each entry is (path, human_readable_name).  The second element is only
+        used to make the error message clearer.
+
+    Example
+    -------
+    ensure_paths_exist(
+        ("/data/features", "features_dir"),
+        (Path("configs/params.yaml"), "params YAML"),
+    )
+    """
+    for p, pretty in pairs:
+        p = Path(p)
+        if not p.exists():
+            raise FileNotFoundError(f"{pretty} not found: {p}")

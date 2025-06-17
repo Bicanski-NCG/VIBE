@@ -7,13 +7,13 @@
 # ------------- Training -------------
 
 # Max epochs
-epochs: 150
+epochs: 15
 
 # Batch size
 batch_size: 4
 
 # Learning rate
-lr: 0.00005
+lr: 0.0001
 
 # Number of warmup epochs
 warmup_epochs: 0
@@ -25,7 +25,7 @@ warmup_start_lr_factor: 0.1
 weight_decay: 0.0001
 
 # Epochs patience
-early_stop_patience: 1
+early_stop_patience: 2
 
 # Loss weights
 lambda_sample: 0
@@ -36,7 +36,7 @@ lambda_sp_adj: 0.00001
 
 # Spatial regularizer
 normalize_pred_for_spatial_regularizer: true
-spatial_sigma: 0.25
+spatial_sigma: 0.05
 
 # L2 regularization of HRF kernel towards canonical SPM form (does not contribute to loss)
 lambda_hrf: 0.001
@@ -75,7 +75,7 @@ val_name: "s06"
 val_run: "all"
 
 # Filter dataset of samples with label e.g. to filter out samples with name "life" or "hidden" use ["life", "figures"]
-filter_name: ["life", "figures"]
+filter_name: null #["life", "figures"]
 
 # Performance settings
 num_workers: 8
@@ -99,8 +99,8 @@ fusion_heads: 4
 fusion_dropout: 0.3
 subject_dropout_prob: 0.0
 use_fusion_transformer: true
-use_run_embeddings: false
-proj_layers: 2
+use_run_embeddings: true
+proj_layers: 1
 subject_count: 4
 
 # Prediction transformer hyperparameters

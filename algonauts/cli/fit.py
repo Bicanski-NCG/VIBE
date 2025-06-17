@@ -28,10 +28,12 @@ def main():
                         help="Run name for W&B")
     parser.add_argument("--device", default="cuda", type=str,
                         help="Device to use for training (default: cuda)")
-    parser.add_argument("--wandb_project", default="fmri-model", type=str,
+    parser.add_argument("--wandb_project", default=None, type=str,
                         help="W&B project name")
-    parser.add_argument("--diagnostics", action="store_true",
-                        help="Plot diagnostics after training", default=True)
+    parser.add_argument("--wandb_entity", default=None, type=str,
+                        help="W&B entity (team) name")
+    parser.add_argument("--no_diagnostics", action="store_true",
+                        help="Skip diagnostics after training")
     args = parser.parse_known_args()[0]
 
     features_dir = args.features_dir or os.getenv("FEATURES_DIR", "data/features")

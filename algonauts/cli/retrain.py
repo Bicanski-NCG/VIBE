@@ -22,12 +22,14 @@ def main(args=None, run_id=None, n_epochs=100):
         parser.add_argument("--output_dir", default=None, type=str,
                             help="Root directory for outputs & checkpoints "
                                  "(default $OUTPUT_DIR or data/outputs)")
-        parser.add_argument("--wandb_project", type=str, default="fmri-model",
+        parser.add_argument("--wandb_project", default=None, type=str,
                             help="W&B project name")
+        parser.add_argument("--wandb_entity", default=None, type=str,
+                                help="W&B entity (team) name")
         parser.add_argument("--device", type=str, default="cuda",
                             help="Device to use for training (default: cuda)")    
-        parser.add_argument("--diagnostics", action="store_true", default=False,
-                            help="Plot diagnostics after retraining")
+        parser.add_argument("--no_diagnostics", action="store_true",
+                            help="Skip diagnostics after training")
         args = parser.parse_known_args()[0]
 
         checkpoint = args.checkpoint
@@ -50,7 +52,9 @@ def main(args=None, run_id=None, n_epochs=100):
     )
 
     # Continue wandb run from the checkpoint
-    wandb.init(id=checkpoint, resume="must", project=args.wandb_project,
+    project_name = args.wandb_project or os.getenv("WANDB_PROJECT", "fmri-model")
+    entity_name = args.wandb_entity or os.getenv("WANDB_ENTITY", None)
+    wandb.init(id=checkpoint, resume="must", project=project_name, entity=entity_name,
                dir=output_dir / "wandb")
     
     with logger.step("📦 Loading checkpoint and config …"):
@@ -88,7 +92,7 @@ def main(args=None, run_id=None, n_epochs=100):
         full_loop(model, optimizer_full, scheduler_full, full_loader, ckpt_dir, config, n_epochs)
 
     # Plot diagnostics after retraining
-    if args.diagnostics:
+    if not args.no_diagnostics:
         with logger.step("📊 Generating diagnostics …"):
             out_dir = ckpt_dir / "full_diagnostics"
             model.load_state_dict(torch.load(ckpt_dir / "final_model.pt"))

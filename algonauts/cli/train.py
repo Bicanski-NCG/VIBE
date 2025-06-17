@@ -42,10 +42,12 @@ def main(args=None):
                                 help="Run name for W&B")
             parser.add_argument("--device", default="cuda", type=str,
                                 help="Device to use for training (default: cuda)")
-            parser.add_argument("--wandb_project", default="fmri-model", type=str,
+            parser.add_argument("--wandb_project", default=None, type=str,
                                 help="W&B project name")
-            parser.add_argument("--diagnostics", action="store_true",
-                                help="Plot diagnostics after training", default=True)
+            parser.add_argument("--wandb_entity", default=None, type=str,
+                                help="W&B entity (team) name")
+            parser.add_argument("--no_diagnostics", action="store_true",
+                                help="Skip diagnostics after training")
             args = parser.parse_known_args()[0]
 
         # Set seed
@@ -86,8 +88,11 @@ def main(args=None):
         # Load config from YAML files
         config = Config.from_yaml(features_path, params_path, chosen_seed, args.name,
                                   features_dir, data_dir, args.device)
+        
+        project_name = args.wandb_project or os.getenv("WANDB_PROJECT", "fmri-model")
+        entity_name = args.wandb_entity or os.getenv("WANDB_ENTITY", None)
 
-        wandb.init(project="fmri-model", config=vars(config), 
+        wandb.init(entity=entity_name, project=project_name, config=vars(config), 
                    name=config.run_name, dir=output_dir / "wandb")
 
         # If running a W&B sweep, wandb.config contains overridden hyperparameters.
@@ -140,7 +145,7 @@ def main(args=None):
         (ckpt_dir / "n_epochs.txt").write_text(str(best_val_epoch))
     
     # -------------------- DIAGNOSTICS --------------------
-    if args.diagnostics:
+    if not args.no_diagnostics:
         with logger.step("📊 Generating validation diagnostics..."):
             out_dir = ckpt_dir / "val_diagnostics"
             model.load_state_dict(torch.load(ckpt_dir / "best_model.pt"))

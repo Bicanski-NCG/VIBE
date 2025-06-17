@@ -83,6 +83,8 @@ eval "$(conda shell.bash hook)"
 export FEATURES_DIR="/path/to/features"
 export DATA_DIR="/path/to/fmri"
 export OUTPUTS_DIR="/path/to/outputs"
+export WANDB_ENTITY="ncg-algonauts" # (team) or username that owns the project
+export WANDB_PROJECT="fmri-model"   # project name
 ```
 You can also add whatever other setup you want for all the runs. Now, you can use the packaged slurm scripts to launch jobs. By default the scripts will look for features in directories specified in these environment variables. If is possible to override these with parameters to the scripts as detailed below.
 

@@ -91,7 +91,7 @@ def load_and_label_atlas(atlas_path: os.PathLike | str,
 
     masker = NiftiLabelsMasker(
         labels_img=atlas_path,
-        labels=network_labels,
+        labels=network_labels.tolist(),
         verbose=0
     )
     masker.fit()

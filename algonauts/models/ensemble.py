@@ -1,7 +1,3 @@
-from algonauts.models import load_model_from_ckpt
-
-# model forward signature: forward(self, features, subject_ids, run_ids, attention_mask)
-
 import torch
 import torch.nn as nn
 
@@ -10,13 +6,12 @@ class EnsembleAverager(nn.Module):
     Ensemble averaging for FMRIModel-compatible models.
     Loads multiple checkpoints and averages their predictions.
     """
-    def __init__(self, ckpt_paths, device="cuda"):
+    def __init__(self, models, device="cuda"):
         super().__init__()
         self.device = device
         self.models = nn.ModuleList()
-        for path in ckpt_paths:
+        for model in models:
             # Load the model from checkpoint, move to device, set eval mode
-            model = load_model_from_ckpt(path, device=device)
             model.eval()
             self.models.append(model)
 

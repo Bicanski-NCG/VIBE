@@ -208,13 +208,14 @@ class FMRIModel(nn.Module):
         pred_heads=8,
         pred_dropout=0.3,
         rope_pct=1.0,
-        num_pre_tokens: int = 5,
         # HRF-related
         use_hrf_conv=False,
         learn_hrf=False,
-        n_prepend_zeros=10,
         hrf_size=8,
         tr_sec=1.49,
+        # padding
+        num_pre_tokens: int = 5,
+        n_prepend_zeros=10,
         # training
         mask_prob=0.2,
     ):

@@ -206,7 +206,7 @@ def main():
     args = args.parse_args()
 
     checkpoint = args.checkpoint
-    name = args.name if args.name else checkpoint
+    name = f"{args.name}_{checkpoint}" if args.name else checkpoint
     if not checkpoint:
         raise ValueError("Please provide a checkpoint to load.")
     print(f"Using checkpoint: {checkpoint}")

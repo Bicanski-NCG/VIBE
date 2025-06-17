@@ -53,29 +53,8 @@ def load_model_from_ckpt(model_ckpt_path, params_path):
     # rebuild Config and model
     config = Config(**cfg_dict)
 
-    # Patch the order of input_dims to match the model's expected order
-    modality_order = [
-        "aud_last",
-        "aud_ln_post",
-        "conv3d_features",
-        "vis_block5",
-        "vis_block8",
-        "vis_block12",
-        "vis_merged",
-        "thinker_12",
-         "thinker_24",
-        "thinker_36",
-        "text",
-        "fast_res3_act",
-        "fast_stem_act",
-        "pool_concat",
-        "slow_res3_act",
-        "slow_res5_act",
-        "slow_stem_act",
-        "audio_long_context",
-        "audio_mfcc_mono",
-        "audio_mfcc_stereo"
-    ]
+    # Modalities list contains the order of modalities in the model.
+    modality_order = config.modalities
     config.input_dims = {modality: config.input_dims[modality] for modality in modality_order if modality in config.input_dims}
 
     model  = build_model(config)
@@ -111,6 +90,9 @@ def build_model(config):
         tr_sec=config.tr_sec,
         # training
         mask_prob=config.mask_prob,
+        # padding
+        num_pre_tokens=config.num_pre_tokens,
+        n_prepend_zeros=config.n_prepend_zeros,
     )
     model.to(config.device)
     return model

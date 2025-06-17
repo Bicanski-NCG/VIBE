@@ -60,7 +60,6 @@ def run_epoch(loader, model, optimizer, device, is_train, laplacians, config):
             sample_loss = sample_similarity_loss(pred, fmri, attn_mask)
             roi_loss = roi_similarity_loss(pred, fmri, attn_mask)
             if config.normalize_pred_for_spatial_regularizer:
-
                 normalized_pred = pred/torch.linalg.norm(pred,dim=-2,keepdim= True)
             else:
                 normalized_pred = pred
@@ -182,7 +181,7 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                 )
                 # Load atlas once
                 if not group_masker:
-                    group_masker = load_and_label_atlas(atlas_paths[0])
+                    group_masker = load_and_label_atlas(atlas_paths[0], yeo_networks=7)
                 # Group‑level mean voxel‑wise r
                 group_mean_r = np.mean(
                     [voxelwise_pearsonr(t, p) for t, p in zip(fmri_true, fmri_pred)],

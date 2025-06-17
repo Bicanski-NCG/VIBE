@@ -61,6 +61,8 @@ def ensure_dir(path: os.PathLike | str) -> Path:
 
 def load_and_label_atlas(atlas_path: os.PathLike | str,
                          *,
+                         yeo_networks: int = 7,
+                         anatomical: bool = False,
                          n_rois: int = 1000) -> NiftiLabelsMasker:
     """
     Load Schaefer-2018 labels and attach them to an unlabeled atlas.
@@ -77,10 +79,15 @@ def load_and_label_atlas(atlas_path: os.PathLike | str,
     NiftiLabelsMasker
         Ready-fit masker with `.labels` attribute.
     """
-    schaefer = get_atlas(n_rois=n_rois)
+    schaefer = get_atlas(n_rois=n_rois, yeo_networks=yeo_networks)
     all_labels = np.insert(schaefer.labels, 0,
                            "7Networks_NA_Background_0").astype(str)
-    network_labels = [lab.split("_")[2] for lab in all_labels]
+    if anatomical:
+        # Extract the anatomical labels from the end of the label string
+        network_labels = np.array([l.split('_')[3] if not l.split('_')[3].isdigit() else l.split('_')[2] for l in all_labels])
+    else:
+        # Extact the functional labels from the label string
+        network_labels = np.array([l.split('_')[2] for l in all_labels])
 
     masker = NiftiLabelsMasker(
         labels_img=atlas_path,
@@ -364,7 +371,7 @@ def plot_diagnostics(model, loader, config, out_dir):
 
         r = voxelwise_pearsonr(true, pred)
 
-        masker = load_and_label_atlas(atlas_path)
+        masker = load_and_label_atlas(atlas_path, yeo_networks=config.yeo_networks, anatomical=True)
 
         plot_glass_brain(r, sid, masker, out_dir=str(out_dir))
 
@@ -394,7 +401,7 @@ def plot_diagnostics(model, loader, config, out_dir):
     # ----- Group diagnostics -----
     logger.info("📊 Group diagnostics …")
     group_mean_r = np.mean([voxelwise_pearsonr(true, pred) for true, pred in zip(fmri_true, fmri_pred)], axis=0)
-    group_masker = load_and_label_atlas(atlas_paths[0])  # use first atlas for group
+    group_masker = load_and_label_atlas(atlas_paths[0], yeo_networks=config.yeo_networks, anatomical=True)  # use first atlas for group
 
     plot_glass_brain(group_mean_r, "group", group_masker, out_dir=str(out_dir))
 

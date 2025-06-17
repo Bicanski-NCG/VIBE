@@ -8,12 +8,12 @@ from nilearn.datasets import fetch_atlas_schaefer_2018
 
 
 @lru_cache(maxsize=None) # We only ever use one atlas size
-def get_atlas(n_rois: int = 1000):
+def get_atlas(n_rois: int = 1000, yeo_networks: int = 7):
     """
     Fetch the Schaefer 2018 atlas with the specified number of ROIs.
     Caches the result to avoid repeated downloads.
     """
-    return fetch_atlas_schaefer_2018(n_rois=n_rois)
+    return fetch_atlas_schaefer_2018(n_rois=n_rois, yeo_networks=yeo_networks, verbose=0)
 
 
 def set_seed(seed: int = 42):
@@ -50,8 +50,16 @@ def collect_predictions(loader, model, device):
 
             for i, sid in enumerate(subj_ids):
                 sid = sid_map[sid]
-                subj_to_true[sid].append(fmri[i].cpu().numpy())
-                subj_to_pred[sid].append(pred[i].cpu().numpy())
+
+                # Only keep "valid" timepoints
+                valid_mask = attn[i].bool()
+                fmri_i = fmri[i][valid_mask].cpu().numpy()
+                pred_i = pred[i][valid_mask].cpu().numpy()
+                if fmri_i.shape[0] == 0 or pred_i.shape[0] == 0:
+                    continue
+
+                subj_to_true[sid].append(fmri_i)
+                subj_to_pred[sid].append(pred_i)
                 if sid not in subj_to_atlas:
                     atlas_path = loader.dataset.samples[0]["subject_atlas"].format(subject=sid)
                     subj_to_atlas[sid] = atlas_path

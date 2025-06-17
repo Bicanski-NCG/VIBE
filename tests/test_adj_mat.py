@@ -3,7 +3,7 @@ Compare legacy `adjacency_matrices_old` with the refactored `adjaceny_matrices`
 to ensure numerical equivalence (within float tolerance).
 
 Usage:
-    pytest -q tests/test_adjacency_compat.py
+    pytest -q tests/test_adj_mat.py
 """
 
 import importlib
@@ -15,7 +15,7 @@ def _banner(msg):
     print(f"🧪  {msg}")
 
 # Import both modules
-old = importlib.import_module("adjacency_matrices_old")
+old = importlib.import_module("ref.ref_adjacency_matrices")
 new = importlib.import_module("algonauts.utils.adjacency_matrices")
 
 N  = 1000        # ROI count small enough for fast CI

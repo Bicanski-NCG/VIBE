@@ -19,4 +19,4 @@
 
 . scripts/env.sh
 
-uv run python algonauts/cli/make_submission.py "$@"
+uv run algonauts-submit "$@"

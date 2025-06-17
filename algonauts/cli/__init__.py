@@ -1,2 +1,4 @@
 from .train import main as train
-from .make_submission import main as make_submission
+from .retrain import main as retrain
+from .fit import main as fit
+from .submit import main as submit

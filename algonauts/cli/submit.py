@@ -5,7 +5,8 @@ import glob
 import numpy as np
 import torch
 import zipfile
-from utils import load_model_from_ckpt
+from algonauts.models import load_model_from_ckpt
+from algonauts.utils import ensure_paths_exist
 
 
 def normalize_feature(x, mean, std):
@@ -197,19 +198,37 @@ def predict_fmri_for_season7(
 
 def main():
     args = argparse.ArgumentParser(description="Make submission for fMRI predictions")
-    args.add_argument("--checkpoint", type=str, help="Checkpoint to load")
-    args.add_argument("--name", type=str, default="fmri_predictions_friends_s7", help="Name of output file")
+    args.add_argument("--checkpoint", type=str, help="Checkpoint to load", required=True)
+    args.add_argument("--name", type=str, default=None, help="Name of output file")
+    args.add_argument("--output_dir", default=None, type=str,
+                      help="Root directory for outputs & checkpoints "
+                           "(default $OUTPUT_DIR or data/outputs)")
     args = args.parse_args()
+
     checkpoint = args.checkpoint
-    name = args.name
+    name = f"{args.name}_{checkpoint}" if args.name else checkpoint
     if not checkpoint:
         raise ValueError("Please provide a checkpoint to load.")
     print(f"Using checkpoint: {checkpoint}")
 
+    output_root = Path(args.output_dir or os.getenv("OUTPUT_DIR", "data/outputs"))
+    submission_dir = output_root / "submissions"
+    checkpoint_dir = output_root / "checkpoints" / checkpoint
+    final_model_path = checkpoint_dir / "final_model.pt"
+    config_path = checkpoint_dir / "config.yaml"
+
+    ensure_paths_exist(
+        (output_root, "output_dir"),
+        (submission_dir, "submission_dir"),
+        (checkpoint_dir, "checkpoint_dir"),
+        (final_model_path, "final_model.pt"),
+        (config_path, "config.yaml"),
+    )
+
     # Load the model from checkpoint
     model, config, = load_model_from_ckpt(
-        model_ckpt_path=f"checkpoints/{checkpoint}/final_model.pt",
-        params_path=f"checkpoints/{checkpoint}/config.yaml",
+        model_ckpt_path=final_model_path,
+        params_path=config_path,
     )
     model.eval()
 
@@ -224,12 +243,12 @@ def main():
         device="cuda",
     )
 
-    output_file = f"{name}.npy"
+    output_file = submission_dir / f"{name}.npy"
     np.save(output_file, predictions, allow_pickle=True)
 
-    zip_file = f"{name}.zip"
+    zip_file = submission_dir / f"{name}.zip"
     with zipfile.ZipFile(zip_file, "w") as zipf:
-        zipf.write(f"{name}.npy")
+        zipf.write(output_file, f"{name}.npy")
     print(f"Saved predictions to {zip_file}")
 
 if __name__ == "__main__":

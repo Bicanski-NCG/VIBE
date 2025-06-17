@@ -44,7 +44,6 @@ class Config:
     proj_layers: int = 1
     fuse_mode: str = "concat"
     subject_count: int = 4
-    n_prepend_zeros: int = 10
 
     # ─── Prediction Transformer ───
     pred_layers: int = 3
@@ -52,6 +51,7 @@ class Config:
     pred_dropout: float = 0.3
     rope_pct: float = 1.0
     num_pre_tokens: int = 5
+    n_prepend_zeros: int = 10
 
     # ─── Spatial Regularization ───
     normalize_pred_for_spatial_regularizer: bool = True
@@ -81,6 +81,7 @@ class Config:
     roi_log_interval: int = 1
     pct_bads: float = 0.1
     max_scatter_points: int = 50000
+    yeo_networks: int = 7
 
     
     @staticmethod

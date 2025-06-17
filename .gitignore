@@ -5,6 +5,7 @@ build/
 dist/
 wheels/
 *.egg-info
+.pytest_cache/
 
 # Virtual environments
 *.venv
@@ -15,15 +16,17 @@ wheels/
 .ipynb_checkpoints/
 
 # Data files
-fmri/
-wandb/
-job_logs/
-features/
-data/
-checkpoints/
-scripts/*
-Features/
+data/raw/fmri/*
+data/raw/stimuli/*
+data/features/*
+data/outputs/checkpoints/*
+data/outputs/submissions/*
+data/outputs/wandb/*
+data/outputs/job_logs/*
 
-# Ignore output files
-*.npy
-*.zip
+# legacy data
+Features/
+fmri/
+
+# ignore env script
+env.sh

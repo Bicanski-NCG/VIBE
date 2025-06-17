@@ -1,5 +1,5 @@
 # sweep.yaml  –  Wide-coverage sweep for Algonauts-Decoding
-program: train.py
+program: algonauts-train
 name: tuning
 method: bayes
 

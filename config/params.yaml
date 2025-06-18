@@ -7,13 +7,13 @@
 # ------------- Training -------------
 
 # Max epochs
-epochs: 15
+epochs: 150
 
 # Batch size
 batch_size: 4
 
 # Learning rate
-lr: 0.0001
+lr: 0.00001
 
 # Number of warmup epochs
 warmup_epochs: 0
@@ -22,7 +22,7 @@ warmup_epochs: 0
 warmup_start_lr_factor: 0.1
 
 # Weight decay
-weight_decay: 0.0001
+weight_decay: 0.001
 
 # Epochs patience
 early_stop_patience: 1
@@ -31,15 +31,15 @@ early_stop_patience: 1
 lambda_sample: 0
 lambda_roi: 0
 lambda_mse: 0.01
-lambda_net_adj: 0.0001
-lambda_sp_adj: 0.00001
+lambda_net_adj: 0.00001
+lambda_sp_adj: 0.000001
 
 # Spatial regularizer
 normalize_pred_for_spatial_regularizer: true
-spatial_sigma: 0.25
+spatial_sigma: 0.05
 
 # L2 regularization of HRF kernel towards canonical SPM form (does not contribute to loss)
-lambda_hrf: 0.001
+lambda_hrf: 0.000
 
 # Log roi correlations every N epochs. Set to 0 to disable ROI logging
 roi_log_interval: 0
@@ -89,7 +89,7 @@ output_dim: 1000
 mask_prob: 0.2
 
 # Fusion transformer hyperparameters
-fusion_hidden_dim: 256
+fusion_hidden_dim: 2560
 fuse_mode: "concat"
 fusion_layers: 1
 fusion_heads: 4
@@ -105,7 +105,7 @@ pred_layers: 3
 pred_heads: 8
 pred_dropout: 0.3
 rope_pct: 1.0
-num_pre_tokens: 5
+num_pre_tokens: 0
 
 # HRF convolution hyperparameters
 use_hrf_conv: false

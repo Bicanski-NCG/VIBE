@@ -22,7 +22,7 @@ from losses import (
     roi_similarity_loss,   
     spatial_regularizer_loss
 )
-from adjaceny_matrices import get_laplacians,get_spatial_adjacency_matrix
+from adjaceny_matrices import get_laplacians,get_spatial_adjacency_matrix, spatial_adjacency_matrix_knn_homogenized, knn_distance_constraint_network_adjacency
 from utils import save_initial_state, load_initial_state, set_seed, log_model_params, collect_predictions
 from config import Config
 from viz import (
@@ -631,8 +631,8 @@ def main():
     # Merge them back into our local config dict so later code picks them up.
     config = Config(**wandb.config)
 
-    adjacency_matrix =get_spatial_adjacency_matrix(sigma=config.spatial_sigma)
-    adjacency_matrix[adjacency_matrix<1e-1]=0.0
+    adjacency_matrix = spatial_adjacency_matrix_knn_homogenized(n_neighbors=15)  #get_spatial_adjacency_matrix(sigma=config.spatial_sigma) #knn_distance_constraint_network_adjacency()
+    #adjacency_matrix[adjacency_matrix<1e-1]=0.0
     # Build model outside the train loop
     model = build_model(config,adjacency_matrix=adjacency_matrix)
     log_model_params(model)

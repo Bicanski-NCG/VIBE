@@ -20,6 +20,8 @@ features:
   slow_stem_act: "Visual/SlowFast_R101_tr1.49/slow_stem_act"
   audio_long_context: "Audio/Wave2Vec2/features_chunk1.49_len60_before50"
   qwen_emotional: "Emotional/Qwen2.5_14_Full_tr1.49"
+  audio_mfcc_mono: "Audio/LowLevel/_chunk1.49_len4.0_before4.0_nmfcc32_nstats4/mono/movies/"
+  audio_mfcc_stereo: "Audio/LowLevel/_chunk1.49_len4.0_before4.0_nmfcc32_nstats4/stereo/movies/"
 
 input_dims:
   aud_last: 2560
@@ -30,16 +32,16 @@ input_dims:
   #vis_block12: 2560
   vis_merged: 4096
   #thinker_12: 4096
-  #thinker_24: 4096
-  thinker_36: 4096
-  text: 5120
+  thinker_24: 4096
+  #thinker_36: 4096
+  #text: 5120
   #fast_res3_act: 2048
-  #fast_stem_act: 1024
+  fast_stem_act: 1024
   pool_concat: 9216
   slow_res3_act: 4096
   #slow_res5_act: 4096
   #slow_stem_act: 8192
   audio_long_context: 2048
-  #qwen_emotional: 5120 
+  qwen_emotional: 5120 
   #audio_mfcc_mono: 128
   #audio_mfcc_stereo: 128

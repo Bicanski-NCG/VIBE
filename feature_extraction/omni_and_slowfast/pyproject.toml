@@ -21,6 +21,7 @@ dependencies = [
     "pytorchvideo>=0.1.5",
     "qwen-omni-utils",
     "soundfile>=0.13.1",
+    "torchaudio>=2.7.1",
     "torchcodec>=0.3.0",
     "torchvision>=0.22.0",
     "transformers",

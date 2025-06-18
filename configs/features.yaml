@@ -33,7 +33,7 @@ input_dims:
   thinker_24: 4096
   #thinker_36: 4096
   text: 2048
-  #fast_res3_act: 2048
+  fast_res3_act: 2048
   #fast_stem_act: 1024
   pool_concat: 9216
   slow_res3_act: 4096

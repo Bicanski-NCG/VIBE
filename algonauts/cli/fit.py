@@ -34,6 +34,8 @@ def main():
                         help="W&B entity (team) name")
     parser.add_argument("--no_diagnostics", action="store_true",
                         help="Skip diagnostics after training")
+    parser.add_argument("--profile", action="store_true",
+                    help="Enable PyTorch profiling and export trace to output_dir/checkpoints/<run_id>/profiler_trace.json")
     args = parser.parse_known_args()[0]
 
     features_dir = args.features_dir or os.getenv("FEATURES_DIR", "data/features")

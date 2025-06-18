@@ -3,14 +3,20 @@ import nibabel as nb
 import numpy as np
 from scipy.ndimage import center_of_mass # For finding centroids
 from scipy.spatial.distance import cdist # For pairwise distances
-from tqdm import tqdm
 import torch
 
+def get_network_masks(network_names,n_rois = 1000):
+    atlas_data = nilearn.datasets.fetch_atlas_schaefer_2018(n_rois=n_rois)
 
-def get_spatial_adjacency_matrix(sigma=0.2, n_rois = 1000):
+    nets = atlas_data['labels']
+    networks = np.array([net.decode('utf-8').split('_')[2] for net in nets])
 
+    masks = {net_name: networks==net_name for net_name in network_names}
 
-    # Assume you've already fetched and loaded the atlas data as shown before:
+    return masks
+    
+def extract_mni_centroids(n_rois = 1000):
+# Assume you've already fetched and loaded the atlas data as shown before:
     atlas_data = nilearn.datasets.fetch_atlas_schaefer_2018(n_rois=n_rois)
     atlas_img = nb.load(atlas_data.maps)
     atlas_data_array = atlas_img.get_fdata() # This is the NumPy array of voxel labels
@@ -26,7 +32,7 @@ def get_spatial_adjacency_matrix(sigma=0.2, n_rois = 1000):
 
     centroids_voxel_ordered = []
     valid_labels = []
-    for label in tqdm(range(1, n_rois + 1)):
+    for label in range(1, n_rois + 1):
         roi_mask = (atlas_data_array == label)
         if np.any(roi_mask):
             # center_of_mass returns (z, y, x) for standard numpy array indexing
@@ -50,6 +56,16 @@ def get_spatial_adjacency_matrix(sigma=0.2, n_rois = 1000):
         # You might need to map these back to the original 1000 indices if you want a 1000x1000 matrix
         # with NaNs for missing ROIs. For simplicity here, we'll build the distance matrix
         # only for the valid ROIs found.
+        
+    return centroids_mni
+
+
+
+
+def get_spatial_adjacency_matrix(sigma=0.2,threshold = 1e-2, n_rois = 1000):
+
+
+    centroids_mni = extract_mni_centroids(n_rois)
 
     # Calculate the pairwise Euclidean distances between all MNI centroids
     # cdist calculates distance between all pairs of rows in two matrices
@@ -64,7 +80,9 @@ def get_spatial_adjacency_matrix(sigma=0.2, n_rois = 1000):
     D = adj_spatial_distance/adj_spatial_distance.max()
 
     # scale distances exponentially
-    W = np.exp(-adj_spatial_distance/sigma)
+    W = np.exp((-D**2)/sigma)
+
+    W[W<threshold]=0.0
 
     #diagonal should be zero
 
@@ -73,7 +91,55 @@ def get_spatial_adjacency_matrix(sigma=0.2, n_rois = 1000):
     return W
 
 
+def spatial_adjacency_matrix_knn_homogenized(n_neighbors = 8,n_rois = 1000,sigma = 'local_max'):
+    '''
+    Compute a spatial adjacency matrix with fixed degree based on k-nearest neighbors and homogenization of distances
+    '''
+    
+    centroids = extract_mni_centroids(n_rois)
+    
+    distance_matrix = cdist(centroids,centroids)
+    
+    knn_inds,knn_distances = naive_knn(distance_matrix,n_neighbors)
+    
+    W = np.zeros_like(distance_matrix)
+    
+    #we may either normalize locally by largest distance, globally by largest distance, or by custom sigma
+    if sigma =='local_max':
+        sigma = knn_distances.max(axis=-1,keepdims=True)
+    elif sigma =='global_max':
+        sigma = knn_distances.max()
+        
+    knn_distances/=sigma
 
+    W[np.arange(knn_inds.shape[0])[:,None],knn_inds] = np.exp(-knn_distances**2)
+
+
+    #W = W-np.diag(np.diag(W))
+
+    #symmetrize
+    A = np.maximum(W,W.T)
+    
+    
+    return A
+
+    
+
+    
+def naive_knn(distance_matrix,k,exclude_self = True):
+    
+    
+    arginds = np.argsort(distance_matrix)
+    
+    if exclude_self:
+        knn_inds = arginds[:,1:k+1]
+    else:
+        knn_inds = arginds[:,:k]
+        
+    knn_distances = distance_matrix[np.arange(distance_matrix.shape[0])[:,None],knn_inds]
+    
+    
+    return knn_inds,knn_distances
 
 
 def get_network_adjacency_matrix(n_rois = 1000):
@@ -130,10 +196,13 @@ def get_network_adjacency_matrix(n_rois = 1000):
 
 
 
-def get_laplacians(sigma=0.2):
+def get_laplacians(sigma=0.2, use_knn_spatial_adjacency = False):
 
 
-    spatial_adjacency = get_spatial_adjacency_matrix(sigma)
+    if use_knn_spatial_adjacency:
+        spatial_adjacency = spatial_adjacency_matrix_knn_homogenized()
+    else:
+        spatial_adjacency = get_spatial_adjacency_matrix(sigma)
 
     network_adjacency = get_network_adjacency_matrix()
 
@@ -151,4 +220,23 @@ def get_laplacians(sigma=0.2):
 
 def calculate_laplacian(A):
     return torch.eye(A.shape[0]) - A/A.sum(axis=1,keepdim=True)
+
+
+def temporal_Laplacian(n=1000,sigma=8.0):
+
+    W = np.zeros((n,n))
+
+    for i in range(n):
+        for j in range(n):
+            W[i,j] = np.exp((-abs(i-j))/sigma)
+
+    W[W<0.1]=0.0
+
+    A = torch.tensor(W).float()
+
+    Laplacian = calculate_laplacian(A)
+
+    return Laplacian
+
+
      

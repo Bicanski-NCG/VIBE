@@ -1,11 +1,12 @@
+import argparse
 import os
+from pathlib import Path
 import glob
 import numpy as np
 import torch
-from fastprogress import progress_bar
-from model import FMRIModel
 import zipfile
-from model import FMRIModel
+from algonauts.models import load_model_from_ckpt
+from algonauts.utils import ensure_paths_exist
 
 
 def normalize_feature(x, mean, std):
@@ -68,7 +69,8 @@ def predict_fmri_for_test_set(
         )
         sample_counts = np.load(sample_dict_path, allow_pickle=True).item()
 
-        for episode in progress_bar(sample_counts.keys()):
+        for episode in sample_counts.keys():
+            print(f"→  Processing {subj} - {episode}")
             n_samples = sample_counts[episode]
             try:
                 features = load_features_for_episode(
@@ -89,7 +91,7 @@ def predict_fmri_for_test_set(
             subj_ids = torch.tensor([subj_id]).to(device)
 
             with torch.no_grad():
-                preds = model(features, subj_ids, attention_mask)
+                preds = model(features, subj_ids, [0], attention_mask)
 
             output_dict[subj][episode] = (
                 preds.squeeze(0).cpu().numpy().astype(np.float32)
@@ -194,73 +196,60 @@ def predict_fmri_for_season7(
     return output_dict
 
 
-feature_paths = {
-    "aud_last": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/aud_last", #torch.Size([102, 1280])
-    "aud_ln_post": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/audio_ln_post", #torch.Size([102, 1280])
-    "conv3d_features": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/conv3d_features", #torch.Size([3536, 1280])
-    "vis_block5": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_block5", #torch.Size([3536, 1280])
-    "vis_block8": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_block8", #torch.Size([3536, 1280])
-    "vis_block12": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_block12", #torch.Size([3536, 1280])
-    "vis_merged": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/vis_merged", #torch.Size([884, 2048])
-    "thinker_12": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_12", #torch.Size([1, 984, 2048])
-    "thinker_24": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_24", #torch.Size([1, 984, 2048])
-    "thinker_36": "Features/Omni/Qwen2.5_3B/features_tr1.49_len8_before6/thinker_36", #torch.Size([1, 984, 2048])
-    "text": "Features/Text/Qwen3B_tr1.49_len60_before50",
-    "fast_res3_act": "Features/Visual/SlowFast_R101_tr1.49/fast_res3_act",
-    "fast_stem_act": "Features/Visual/SlowFast_R101_tr1.49/fast_stem_act",
-    "pool_concat": "Features/Visual/SlowFast_R101_tr1.49/pool_concat",
-    "slow_res3_act": "Features/Visual/SlowFast_R101_tr1.49/slow_res3_act",
-    "slow_res5_act": "Features/Visual/SlowFast_R101_tr1.49/slow_res5_act",
-    "slow_stem_act": "Features/Visual/SlowFast_R101_tr1.49/slow_stem_act",
-    "audio_long_contrext": "Features/Audio/Wave2Vec2/features_chunk1.49_len60_before50",
-    # "audio_mfcc_mono": "Features/Audio/LowLevel/_chunk1.49_len4.0_before2.0_nmfcc32_nstats4/mono/movies/",
-    # "audio_mfcc_stereo": "Features/Audio/LowLevel/_chunk1.49_len4.0_before2.0_nmfcc32_nstats4/stereo/movies/",
+def main():
+    args = argparse.ArgumentParser(description="Make submission for fMRI predictions")
+    args.add_argument("--checkpoint", type=str, help="Checkpoint to load", required=True)
+    args.add_argument("--name", type=str, default=None, help="Name of output file")
+    args.add_argument("--output_dir", default=None, type=str,
+                      help="Root directory for outputs & checkpoints "
+                           "(default $OUTPUT_DIR or data/outputs)")
+    args = args.parse_args()
 
-}
+    checkpoint = args.checkpoint
+    name = f"{args.name}_{checkpoint}" if args.name else checkpoint
+    if not checkpoint:
+        raise ValueError("Please provide a checkpoint to load.")
+    print(f"Using checkpoint: {checkpoint}")
 
-input_dims = {
-    "aud_last": 1280 * 2,
-    "aud_ln_post": 1280 * 2,
-    #"conv3d_features": 1280 * 2,
-    #"vis_block5": 1280 * 2,
-    "vis_block8": 1280 * 2,
-    #"vis_block12": 1280 * 2,
-    "vis_merged": 2048 * 2,
-    #"thinker_12": 2048 * 2,
-    "thinker_24": 2048 * 2,
-    #"thinker_36": 2048 * 2,
-    "text": 2048,
-    #"fast_res3_act": 2048,
-    #"fast_stem_act": 1024,
-    "pool_concat": 9216,
-    "slow_res3_act": 4096,
-    #"slow_res5_act": 4096,
-    #"slow_stem_act": 8192,
-    "audio_long_contrext": 2048,
-    # "audio_mfcc_mono":int(4*32),
-    # "audio_mfcc_stereo":int(4*32)
+    output_root = Path(args.output_dir or os.getenv("OUTPUT_DIR", "data/outputs"))
+    submission_dir = output_root / "submissions"
+    checkpoint_dir = output_root / "checkpoints" / checkpoint
+    final_model_path = checkpoint_dir / "final_model.pt"
+    config_path = checkpoint_dir / "config.yaml"
 
-}
+    ensure_paths_exist(
+        (output_root, "output_dir"),
+        (submission_dir, "submission_dir"),
+        (checkpoint_dir, "checkpoint_dir"),
+        (final_model_path, "final_model.pt"),
+        (config_path, "config.yaml"),
+    )
 
+    # Load the model from checkpoint
+    model, config, = load_model_from_ckpt(
+        model_ckpt_path=final_model_path,
+        params_path=config_path,
+    )
+    model.eval()
 
-model = FMRIModel(
-    input_dims, 1000, hidden_dim=256, fuse_mode="concat", subject_count=4,
-)
+    feature_paths = {name: Path(config.features_dir) / path for name, path in config.features.items()}
 
-model.load_state_dict(torch.load("final_model.pt"))
-model.eval()
+    print("Starting predictions for fMRI season 7 episodes...")
+    predictions = predict_fmri_for_test_set(
+        model=model,
+        feature_paths=feature_paths,
+        sample_counts_root=config.data_dir,
+        normalization_stats=None,
+        device="cuda",
+    )
 
-predictions = predict_fmri_for_test_set(
-    model=model,
-    feature_paths=feature_paths,
-    sample_counts_root="fmri",
-    normalization_stats=None,
-    device="cuda:0",
-)
+    output_file = submission_dir / f"{name}.npy"
+    np.save(output_file, predictions, allow_pickle=True)
 
-output_file = "fmri_predictions_friends_s7.npy"
-np.save(output_file, predictions, allow_pickle=True)
+    zip_file = submission_dir / f"{name}.zip"
+    with zipfile.ZipFile(zip_file, "w") as zipf:
+        zipf.write(output_file, f"{name}.npy")
+    print(f"Saved predictions to {zip_file}")
 
-zip_file = "fmri_predictions_friends_s7.zip"
-with zipfile.ZipFile(zip_file, "w") as zipf:
-    zipf.write("fmri_predictions_friends_s7.npy")
+if __name__ == "__main__":
+    main()

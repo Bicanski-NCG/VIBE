@@ -1,0 +1,87 @@
+# sweep.yaml  –  Wide-coverage sweep for Algonauts-Decoding
+program: algonauts-train
+name: tuning
+method: bayes
+
+metric:
+  name: best_val_pearson
+  goal: minimize
+
+parameters:
+  # ───── Optimiser / schedule ──────────────────────────────────────────
+  lr:
+    distribution: log_uniform_values
+    min: !!float 0.00001
+    max: !!float 0.0001
+  weight_decay:
+    distribution: log_uniform_values
+    min: !!float 0.00001
+    max: !!float 0.001
+  batch_size:
+    values: [4, 8, 12]
+  warmup_epochs:
+    values: [0, 2, 4, 6]
+
+  # ───── Model capacity ────────────────────────────────────────────────
+  fusion_hidden_dim:
+    values: [128, 256, 512]
+  fusion_layers:
+    distribution: int_uniform
+    min: 1
+    max: 3
+  fusion_heads:
+    values: [4, 8]
+  pred_layers:
+    distribution: int_uniform
+    min: 1
+    max: 5
+  pred_heads:
+    values: [4, 8]
+  n_prepend_zeros:
+    values: [0, 4, 8, 12, 16]
+
+  # ───── Regularisation & dropouts ──────────────────────────────────────
+  pred_dropout:
+    distribution: uniform
+    min: 0.0
+    max: 0.5
+  modality_dropout_prob:
+    distribution: uniform
+    min: 0.0
+    max: 0.3
+  mask_prob:
+    distribution: uniform
+    min: 0.0
+    max: 0.5
+  subject_dropout_prob:
+    distribution: uniform
+    min: 0.0
+    max: 0.3
+  #rope_pct:
+  #  distribution: uniform
+  #  min: 0.5
+  #  max: 1.0
+
+  # ───── Loss-weight scalars ───────────────────────────────────────────
+  lambda_mse:
+    distribution: log_uniform_values
+    min: 0.00001
+    max: 0.1
+  lambda_roi:
+    distribution: log_uniform_values
+    min: 0.00001
+    max: 0.1
+  lambda_net_adj:
+    distribution: log_uniform_values
+    min: 0.00001
+    max: 0.001
+  lambda_sp_adj:
+    distribution: log_uniform_values
+    min: 0.00001
+    max: 0.001
+
+command:
+  - ${env}
+  - ${interpreter}
+  - ${program}
+  - --train_val_only

@@ -5,6 +5,7 @@ build/
 dist/
 wheels/
 *.egg-info
+.pytest_cache/
 
 # Virtual environments
 *.venv
@@ -12,13 +13,20 @@ wheels/
 # IDE and editor files
 .vscode/
 .idea/
+.ipynb_checkpoints/
 
 # Data files
-fmri/
-wandb/
-job_logs/
-features/
-data/
-checkpoints/
-scripts/*
+data/raw/fmri/*
+data/raw/stimuli/*
+data/features/*
+data/outputs/checkpoints/*
+data/outputs/submissions/*
+data/outputs/wandb/*
+data/outputs/job_logs/*
+
+# legacy data
 Features/
+fmri/
+
+# ignore env script
+env.sh

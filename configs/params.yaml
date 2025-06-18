@@ -1,0 +1,120 @@
+########################################################
+#                                                      #
+#                      Parameters                      #
+#                                                      #
+########################################################
+
+# ------------- Training -------------
+
+# Max epochs
+epochs: 15
+
+# Batch size
+batch_size: 4
+
+# Learning rate
+lr: 0.0001
+
+# Number of warmup epochs
+warmup_epochs: 0
+
+# Multiplicative starting factor for warmup
+warmup_start_lr_factor: 0.1
+
+# Weight decay
+weight_decay: 0.0001
+
+# Epochs patience
+early_stop_patience: 2
+
+# Loss weights
+lambda_sample: 0
+lambda_roi: 0
+lambda_mse: 0.01
+lambda_net_adj: 0.0001
+lambda_sp_adj: 0.00001
+
+# Spatial regularizer
+normalize_pred_for_spatial_regularizer: true
+spatial_sigma: 0.05
+
+# L2 regularization of HRF kernel towards canonical SPM form (does not contribute to loss)
+lambda_hrf: 0.001
+
+# Log roi correlations every N epochs. Set to 0 to disable ROI logging
+roi_log_interval: 1
+
+# Number of networks to extract, one of [7, 17]
+yeo_networks: 17
+
+# Probability of dropping entire modality
+modality_dropout_prob: 0.0
+
+# ------------- Data -------------
+
+# Augment data with training noise. Set to 0.0 to disable
+train_noise_std: 0.0
+
+# Oversample movies by N - 1 times (scheduled for deprecation). Set to 1 to disable
+oversample_factor: 1
+
+# Stratify by variable name. Set to false to disable.
+# Weights samples to balance classes. One of ["is_movie", "name", false]
+stratification_variable: false
+
+# Normalize validation bold
+normalize_validation_bold: false
+
+# Whether to use precomputed normalization stats
+use_normalization: false
+
+# Validation season or movie. One of ["s01"-"s06", "bourne", "figures", "life", "wolf"]
+val_name: "s06"
+
+# Whether to validate on first or second run if multiple. One of ["all", "0", "1"]
+val_run: "all"
+
+# Filter dataset of samples with label e.g. to filter out samples with name "life" or "hidden" use ["life", "figures"]
+filter_name: null #["life", "figures"]
+
+# Performance settings
+num_workers: 8
+prefetch_factor: 4
+persistent_workers: false
+pin_memory: true
+
+# ------------- Model -------------
+
+# Number of voxels (output dimension of the model)
+output_dim: 1000
+
+# Input masking probability during training
+mask_prob: 0.2
+
+# Fusion transformer hyperparameters
+fusion_hidden_dim: 256
+fuse_mode: "concat"
+fusion_layers: 1
+fusion_heads: 4
+fusion_dropout: 0.3
+subject_dropout_prob: 0.0
+use_fusion_transformer: true
+use_run_embeddings: true
+proj_layers: 1
+subject_count: 4
+
+# Prediction transformer hyperparameters
+pred_layers: 3
+pred_heads: 8
+pred_dropout: 0.3
+rope_pct: 1.0
+
+# HRF convolution hyperparameters
+use_hrf_conv: false
+learn_hrf: false
+hrf_size: 8
+tr_sec: 1.49
+
+# Padding
+num_pre_tokens: 0       # Learnable prepended tokens
+n_prepend_zeros: 10     # Zero prepended tokens

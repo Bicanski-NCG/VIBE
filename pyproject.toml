@@ -5,14 +5,27 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "black>=25.1.0",
-    "fastprogress>=1.0.3",
     "h5py>=3.13.0",
     "ipykernel>=6.29.5",
     "labml-nn>=0.4.137",
     "matplotlib>=3.10.1",
     "nilearn>=0.10.4",
     "numpy==1.23.5",
+    "pyyaml>=6.0.2",
     "torch>=2.6.0",
     "wandb>=0.19.9",
 ]
+
+[tool.setuptools]
+packages = ["algonauts"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.0",
+]
+
+[project.scripts]
+algonauts-train   = "algonauts.cli.train:main"
+algonauts-retrain = "algonauts.cli.retrain:main"
+algonauts-fit     = "algonauts.cli.fit:main"
+algonauts-submit  = "algonauts.cli.submit:main"

@@ -4,6 +4,7 @@ import wandb
 from pathlib import Path
 import os
 import torch
+from torch.profiler import profile, record_function, ProfilerActivity
 
 from algonauts.data import get_train_val_loaders
 from algonauts.models import save_initial_state, build_model
@@ -48,6 +49,8 @@ def main(args=None):
                                 help="W&B entity (team) name")
             parser.add_argument("--no_diagnostics", action="store_true",
                                 help="Skip diagnostics after training")
+            parser.add_argument("--profile", action="store_true",
+                                help="Enable PyTorch profiling and export trace to output_dir/checkpoints/<run_id>/profiler_trace.json")
             args = parser.parse_known_args()[0]
 
         # Set seed
@@ -138,9 +141,18 @@ def main(args=None):
 
     # -------------------- TRAIN --------------------
     with logger.step("🚀 Starting training loop..."):
-        best_val_epoch = train_val_loop(model, optimizer, scheduler,train_loader, 
-                                        valid_loader, ckpt_dir, config)
-        
+        if args.profile:
+            # Run training under PyTorch profiler
+            with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+                         record_shapes=True) as prof:
+                best_val_epoch = train_val_loop(model, optimizer, scheduler, train_loader,
+                                                valid_loader, ckpt_dir, config)
+            # Export Chrome trace for analysis
+            prof.export_chrome_trace(str(ckpt_dir / "profiler_trace.json"))
+            logger.info(f"📝 Profiling trace saved to {ckpt_dir / 'profiler_trace.json'}")
+        else:
+            best_val_epoch = train_val_loop(model, optimizer, scheduler, train_loader,
+                                            valid_loader, ckpt_dir, config)
         # Save the number of epochs trained
         (ckpt_dir / "n_epochs.txt").write_text(str(best_val_epoch))
     

@@ -29,3 +29,7 @@ algonauts-train   = "algonauts.cli.train:main"
 algonauts-retrain = "algonauts.cli.retrain:main"
 algonauts-fit     = "algonauts.cli.fit:main"
 algonauts-submit  = "algonauts.cli.submit:main"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

@@ -19,6 +19,9 @@ dependencies = [
 [tool.setuptools]
 packages = ["algonauts"]
 
+[tool.uv.workspace]
+members = ["algonauts/features/BEATs-Feature-Extraction"]
+
 [dependency-groups]
 dev = [
     "pytest>=8.4.0",

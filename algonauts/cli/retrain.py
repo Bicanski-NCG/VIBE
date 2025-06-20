@@ -11,7 +11,7 @@ from algonauts.utils import logger, ensure_paths_exist
 from algonauts.utils.viz import plot_diagnostics
 
 
-def main(args=None, run_id=None, n_epochs=100):
+def main(args=None, run_id=None, n_epochs=None):
     # -------------------- CLI ARGUMENTS --------------------
     if not args:
         parser = argparse.ArgumentParser(
@@ -89,6 +89,9 @@ def main(args=None, run_id=None, n_epochs=100):
 
     # Retrain the model on the full dataset
     with logger.step("🚀 Starting full retrain …"):
+        # epochs file has format <best_val_epoch>
+        with open(ckpt_dir / "n_epochs.txt", "r") as f:
+            n_epochs = int(f.readline().strip())
         full_loop(model, optimizer_full, scheduler_full, full_loader, ckpt_dir, config, n_epochs)
 
     # Plot diagnostics after retraining

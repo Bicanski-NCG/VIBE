@@ -151,10 +151,11 @@ def main(args=None):
             prof.export_chrome_trace(str(ckpt_dir / "profiler_trace.json"))
             logger.info(f"📝 Profiling trace saved to {ckpt_dir / 'profiler_trace.json'}")
         else:
-            best_val_epoch = train_val_loop(model, optimizer, scheduler, train_loader,
-                                            valid_loader, ckpt_dir, config)
+            best_val_epoch, max_roi_epoch = train_val_loop(model, optimizer, scheduler, train_loader,
+                                                           valid_loader, ckpt_dir, config)
         # Save the number of epochs trained
-        (ckpt_dir / "n_epochs.txt").write_text(str(best_val_epoch))
+        with open(ckpt_dir / "n_epochs.txt", "w") as f:
+            f.write(f"{best_val_epoch}\n")
     
     # -------------------- DIAGNOSTICS --------------------
     if not args.no_diagnostics:

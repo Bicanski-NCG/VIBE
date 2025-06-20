@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import zipfile
 from algonauts.models import load_model_from_ckpt
+from algonauts.models.ensemble import EnsembleAverager, ROIAdaptiveEnsemble
 from algonauts.utils import ensure_paths_exist
 
 
@@ -198,38 +199,99 @@ def predict_fmri_for_season7(
 
 def main():
     args = argparse.ArgumentParser(description="Make submission for fMRI predictions")
-    args.add_argument("--checkpoint", type=str, help="Checkpoint to load", required=True)
+    group = args.add_mutually_exclusive_group(required=True)
+    group.add_argument("--checkpoint", type=str, help="Checkpoint to load")
+    group.add_argument("--ensemble", type=str, nargs="+",
+                       help="List of checkpoints to load for ensemble averaging")
     args.add_argument("--name", type=str, default=None, help="Name of output file")
     args.add_argument("--output_dir", default=None, type=str,
                       help="Root directory for outputs & checkpoints "
                            "(default $OUTPUT_DIR or data/outputs)")
+    args.add_argument("--roi_ensemble", action="store_true",
+                      help="Use ROIAdaptiveEnsemble to select best models per ROI")
     args = args.parse_args()
 
-    checkpoint = args.checkpoint
-    name = f"{args.name}_{checkpoint}" if args.name else checkpoint
-    if not checkpoint:
-        raise ValueError("Please provide a checkpoint to load.")
-    print(f"Using checkpoint: {checkpoint}")
+    if args.name is None:
+        name = "submission"
+    else:
+        name = args.name
+
+    # Attach checkpoint or ensemble name to the submission name
+    if args.checkpoint:
+        name = f"{name}_{args.checkpoint}"
+    elif args.ensemble:
+        name = f"{name}_ensemble"
+
+    if not args.checkpoint and not args.ensemble:
+        raise ValueError("Please provide a checkpoint to load or an ensemble list.")
+    if args.checkpoint:
+        print(f"Using checkpoint: {args.checkpoint}")
+    else:
+        print(f"Using ensemble checkpoints: {args.ensemble}")
 
     output_root = Path(args.output_dir or os.getenv("OUTPUT_DIR", "data/outputs"))
     submission_dir = output_root / "submissions"
-    checkpoint_dir = output_root / "checkpoints" / checkpoint
-    final_model_path = checkpoint_dir / "final_model.pt"
-    config_path = checkpoint_dir / "config.yaml"
+    checkpoint_dir = output_root / "checkpoints" / args.checkpoint if args.checkpoint else None
+    final_model_path = checkpoint_dir / "final_model.pt" if checkpoint_dir else None
+    config_path = checkpoint_dir / "config.yaml" if checkpoint_dir else None
 
     ensure_paths_exist(
         (output_root, "output_dir"),
         (submission_dir, "submission_dir"),
-        (checkpoint_dir, "checkpoint_dir"),
-        (final_model_path, "final_model.pt"),
-        (config_path, "config.yaml"),
+        *(([(checkpoint_dir, "checkpoint_dir")] if checkpoint_dir else [])),
+        *(([(final_model_path, "final_model.pt")] if final_model_path else [])),
+        *(([(config_path, "config.yaml")] if config_path else [])),
     )
 
-    # Load the model from checkpoint
-    model, config, = load_model_from_ckpt(
-        model_ckpt_path=final_model_path,
-        params_path=config_path,
-    )
+    # Build model according to --ensemble or single checkpoint, with optional ROI wrap
+    device = "cuda"
+    if args.ensemble:
+        # Ensemble averaging over provided run IDs
+        checkpoint_names = args.ensemble
+        # Load config from the first checkpoint
+        first_ckpt_dir = output_root / "checkpoints" / checkpoint_names[0]
+        _, config = load_model_from_ckpt(
+            model_ckpt_path=str(first_ckpt_dir / "final_model.pt"),
+            params_path=str(first_ckpt_dir / "config.yaml"),
+        )
+        # Load each model and collect
+        models = []
+        for chk in checkpoint_names:
+            ckpt_dir = output_root / "checkpoints" / chk
+            if args.roi_ensemble:
+                m = ROIAdaptiveEnsemble(
+                    roi_labels=torch.load(ckpt_dir / "roi_names.pt", weights_only=False),
+                    roi_to_epoch=torch.load(ckpt_dir / "roi_to_epoch.pt", weights_only=False),
+                    ckpt_dir=ckpt_dir,
+                    device=device,
+                )
+            else:
+                m, _ = load_model_from_ckpt(
+                    model_ckpt_path=str(ckpt_dir / "final_model.pt"),
+                    params_path=str(ckpt_dir / "config.yaml"),
+                )
+            m.to(device).eval()
+            models.append(m)
+        model = EnsembleAverager(models=models, device=device)
+    else:
+        # Single checkpoint path
+        checkpoint = args.checkpoint
+        checkpoint_dir = output_root / "checkpoints" / checkpoint
+        model, config = load_model_from_ckpt(
+            model_ckpt_path=str(checkpoint_dir / "final_model.pt"),
+            params_path=str(checkpoint_dir / "config.yaml"),
+        )
+        model.to(device)
+        if args.roi_ensemble:
+            # Wrap in ROIAdaptiveEnsemble for per-ROI best epoch
+            roi_labels = torch.load(checkpoint_dir / "roi_names.pt", weights_only=False)
+            roi_to_epoch = torch.load(checkpoint_dir / "roi_to_epoch.pt", weights_only=False)
+            model = ROIAdaptiveEnsemble(
+                roi_labels=roi_labels,
+                roi_to_epoch=roi_to_epoch,
+                ckpt_dir=checkpoint_dir,
+                device=device,
+            )
     model.eval()
 
     feature_paths = {name: Path(config.features_dir) / path for name, path in config.features.items()}
@@ -240,7 +302,7 @@ def main():
         feature_paths=feature_paths,
         sample_counts_root=config.data_dir,
         normalization_stats=None,
-        device="cuda",
+        device=device,
     )
 
     output_file = submission_dir / f"{name}.npy"

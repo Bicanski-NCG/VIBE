@@ -64,7 +64,6 @@ To intstall the python env, follow these steps:
 1. Install uv: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 2. Load conda module: `module load anaconda/3/2023.03`
 3. Sync the venv: `uv sync`
-4. Install algonauts `uv pip install -e .`
 4. Set up WandB: `wandb login`
 
 ## Setup cluster

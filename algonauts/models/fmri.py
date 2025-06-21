@@ -52,7 +52,6 @@ class ModalityFusionTransformer(nn.Module):
         self.null_subject_index = subject_count
 
         if use_transformer:
-            '''
             encoder_layer = nn.TransformerEncoderLayer(
                 d_model=hidden_dim,
                 nhead=num_heads,
@@ -61,8 +60,8 @@ class ModalityFusionTransformer(nn.Module):
                 activation="gelu",
                 dropout=dropout_rate,
             )
-            '''
 
+            '''            
             encoder_layer = MLATransformerEncoderLayer(
                 d_model=hidden_dim,
                 num_head=num_heads,
@@ -74,9 +73,10 @@ class ModalityFusionTransformer(nn.Module):
                 d_c1=d_c1,
                 d_rotate=d_rotate,
             )
+            '''
 
-            # self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-            self.transformer = MLATransformerEncoder(encoder_layer, num_layers=num_layers)
+            self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+            # self.transformer = MLATransformerEncoder(encoder_layer, num_layers=num_layers)
         else:
             self.transformer = nn.Identity()
 

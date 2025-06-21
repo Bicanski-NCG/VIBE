@@ -93,6 +93,10 @@ def build_model(config):
         # padding
         num_pre_tokens=config.num_pre_tokens,
         n_prepend_zeros=config.n_prepend_zeros,
+        # MLA params
+        d_c=config.d_c,
+        d_c1=config.d_c1,
+        d_rotate=config.d_rotate,
     )
     model.to(config.device)
     return model

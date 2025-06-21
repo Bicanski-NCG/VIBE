@@ -109,6 +109,15 @@ pred_heads: 8
 pred_dropout: 0.3
 rope_pct: 1.0
 
+d_c: 32  # Default value, can be swept
+# K/V compression dimension for MLA
+
+d_c1: 32 # Default value, can be swept
+# Q compression dimension for MLA
+
+d_rotate: 16 # Default value, can be swept
+# Rotary position embedding dim for MLA
+
 # HRF convolution hyperparameters
 use_hrf_conv: false
 learn_hrf: false

@@ -31,7 +31,10 @@ class ModalityFusionTransformer(nn.Module):
         fuse_mode: str = "concat",
         use_transformer: bool = True,
         use_run_embeddings: bool = False,
-        num_layers_projection: int = 1
+        num_layers_projection: int = 1,
+        d_c: int = 32,
+        d_c1: int = 32,
+        d_rotate: int = 16,
     ):
         super().__init__()
         self.fuse_mode = fuse_mode
@@ -66,7 +69,10 @@ class ModalityFusionTransformer(nn.Module):
                 dim_feedforward=hidden_dim * 4,
                 batch_first=True,
                 activation='gelu',
-                dropout=dropout_rate
+                dropout=dropout_rate,
+                d_c=d_c,
+                d_c1=d_c1,
+                d_rotate=d_rotate,
             )
 
             # self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
@@ -246,6 +252,10 @@ class FMRIModel(nn.Module):
         n_prepend_zeros=10,
         # training
         mask_prob=0.2,
+        # MLA params
+        d_c=32,
+        d_c1=32,
+        d_rotate=16,
     ):
         """
         FMRIModel combines modality fusion and temporal prediction.
@@ -285,6 +295,9 @@ class FMRIModel(nn.Module):
             use_transformer=use_fusion_transformer,
             use_run_embeddings=use_run_embeddings,
             num_layers_projection=proj_layers,
+            d_c=d_c,
+            d_c1=d_c1,
+            d_rotate=d_rotate,
         )
 
         fused_dim = (

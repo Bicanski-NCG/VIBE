@@ -1,0 +1,21 @@
+program: algonauts-train
+name: mla_tuning
+method: bayes
+
+metric:
+  name: best_val_pearson
+  goal: minimize
+
+parameters:
+  d_c:
+    values: [8, 16, 24, 32, 64, 96, 128, 256]
+  d_c1:
+    values: [8, 16, 24, 32, 64, 96, 128, 256]
+  d_rotate:
+    values: [8, 16, 24, 32, 48, 64]
+
+command:
+  - ${env}
+  - ${interpreter}
+  - ${program}
+  - --train_val_only

@@ -83,6 +83,10 @@ class Config:
     max_scatter_points: int = 50000
     yeo_networks: int = 7
 
+    d_c: int = 32
+    d_c1: int = 32
+    d_rotate: int = 16
+
     
     @staticmethod
     def from_yaml(features_path: str, params_path: str, seed: int, run_name: Optional[str] = None,

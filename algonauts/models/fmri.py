@@ -5,6 +5,8 @@ import torch.nn.functional as F
 from scipy.stats import gamma
 from algonauts.models.rope import PredictionTransformerRoPE
 
+from mla import MLATransformerEncoderLayer, MLATransformerEncoder
+
 
 def spm_hrf(tr: float, size: int):
     length = tr * size
@@ -47,6 +49,7 @@ class ModalityFusionTransformer(nn.Module):
         self.null_subject_index = subject_count
 
         if use_transformer:
+            '''
             encoder_layer = nn.TransformerEncoderLayer(
                 d_model=hidden_dim,
                 nhead=num_heads,
@@ -55,8 +58,20 @@ class ModalityFusionTransformer(nn.Module):
                 activation="gelu",
                 dropout=dropout_rate,
             )
-            self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-        else: 
+            '''
+
+            encoder_layer = MLATransformerEncoderLayer(
+                d_model=hidden_dim,
+                num_head=num_heads,
+                dim_feedforward=hidden_dim * 4,
+                batch_first=True,
+                activation='gelu',
+                dropout=dropout_rate
+            )
+
+            # self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+            self.transformer = MLATransformerEncoder(encoder_layer, num_layers=num_layers)
+        else:
             self.transformer = nn.Identity()
 
     def build_projection(self, input_dim, output_dim, num_layers):
@@ -135,6 +150,8 @@ class PredictionTransformer(nn.Module):
     ):
         super().__init__()
         self.pos_encoder = FixedPositionalEncoding(input_dim, max_len)
+
+        '''
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=input_dim,
             nhead=num_heads,
@@ -143,7 +160,18 @@ class PredictionTransformer(nn.Module):
             batch_first=True,
             activation="gelu",
         )
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        '''
+
+        encoder_layer = MLATransformerEncoderLayer(
+            d_model=input_dim,
+            num_head=num_heads,
+            dim_feedforward=input_dim * 4,
+            batch_first=True,
+            activation='gelu',
+        )
+        # self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.transformer = MLATransformerEncoder(encoder_layer, num_layers=num_layers)
+
         self.output_head = nn.Linear(input_dim, output_dim)
 
     def forward(self, x, attn_mask):
@@ -286,7 +314,7 @@ class FMRIModel(nn.Module):
         )
 
         self.n_prepend_zeros = n_prepend_zeros
-        
+
         self.use_hrf_conv = use_hrf_conv
         self.learn_hrf = learn_hrf
         self.hrf_size = hrf_size
@@ -310,7 +338,7 @@ class FMRIModel(nn.Module):
 
         else:
             self.hrf_conv = nn.Identity()
-    
+
         self.mask_prob = mask_prob
 
     def forward(self, features, subject_ids, run_ids, attention_mask):
@@ -344,7 +372,7 @@ class FMRIModel(nn.Module):
         )
         attention_mask = torch.cat((attention_mask_pre, attention_mask), dim=-1)
 
-      
+
         if self.num_pre_tokens > 0:
             B = fused.size(0)
             prefix = self.pre_tokens.unsqueeze(0).expand(B, -1, -1)   # [B, T_p, D]
@@ -363,7 +391,7 @@ class FMRIModel(nn.Module):
         preds = self.predictor(fused, attention_mask)
 
         if self.num_pre_tokens > 0:
-            preds = preds[:, self.num_pre_tokens :, :] 
+            preds = preds[:, self.num_pre_tokens :, :]
 
         if self.use_hrf_conv:
             preds = preds.transpose(1, 2)
@@ -372,7 +400,7 @@ class FMRIModel(nn.Module):
             preds = preds.transpose(1, 2)
 
         # Remove the appended zeros from preds
-        preds = preds[..., num_pre_post_timepoints : preds.shape[-2],:] 
+        preds = preds[..., num_pre_post_timepoints : preds.shape[-2],:]
         #preds = preds[..., num_pre_post_timepoints : preds.shape[-2] - num_pre_post_timepoints, :]
 
 

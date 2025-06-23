@@ -84,16 +84,16 @@ def pool_and_stats(x, h_out, w_out):
     feats = torch.cat([mu_t, sigma_t], dim=1)        # (B, 2C, h, w)
     return feats.view(B, -1)
 
-def global_stats(x):
+def global_stats(x, h_out=1, w_out=1):
     """
-    No further spatial pooling – just μ/σ across time.
-    Works for tensors that already have small spatial dims (e.g. 2×2 or 1×1).
+    Optional h_out/w_out let you squeeze spatially to a fixed size
+    before taking μ/σ over time.
     """
-    B, C, T, H, W = x.shape
-    mu_t  = x.mean(dim=2)            # (B, C, H, W)
-    sigma_t = x.std(dim=2)           # (B, C, H, W)
-    feats = torch.cat([mu_t, sigma_t], dim=1)        # (B, 2C, H, W)
-    return feats.view(B, -1)              # (B, 2C*H*W)
+    B, C, T, _, _ = x.shape
+    if (h_out, w_out) != (x.shape[-2], x.shape[-1]):      # only if needed
+        x = F.adaptive_avg_pool3d(x, output_size=(T, h_out, w_out))
+    mu_t  = x.mean(dim=2)
+    return torch.cat([mu_t], dim=1).view(B, -1)
 
 class PackPathway(torch.nn.Module):
     """
@@ -156,7 +156,7 @@ post_transform = {
     "slow_res5_act": lambda x: pool_and_stats(x, 1, 1),
 
     # 6) Pooled Slow+Fast concat -> global stats (shape (B,2304,1,2,2))
-    "pool_concat":  lambda x: torch.flatten(x, start_dim=1),
+    "pool_concat":  lambda x: torch.flatten(x, start_dim=1) if center_crop else global_stats(x, 2, 2),
 }
 side_size = 256
 mean = [0.45, 0.45, 0.45]
@@ -170,6 +170,7 @@ def process_video_folder(
     output_folder,
     model,
     tr,
+    center_crop=False
 ):
     video_files = []
     for root, _, files in os.walk(input_folder):
@@ -196,6 +197,7 @@ def process_video_folder(
                 relative_path,
                 model,
                 tr,
+                center_crop=center_crop
             )
 
 @torch.no_grad()
@@ -206,22 +208,26 @@ def extract_video_features(
     relative_path,
     model,
     tr,
+    center_crop=False,
 ):
     features = defaultdict(list)
     _, video_duration = get_movie_info(video_path)
 
+    transform_list = [
+        UniformTemporalSubsample(num_frames),
+        Lambda(lambda x: x / 255.0),
+        NormalizeVideo(mean, std),
+        ShortSideScale(size=side_size),
+        CenterCropVideo(crop_size),
+        PackPathway(),
+    ]
+
+    if not center_crop:
+        transform_list.pop(-2)
+
     transform = ApplyTransformToKey(
         key="video",
-        transform=Compose(
-            [
-                UniformTemporalSubsample(num_frames),
-                Lambda(lambda x: x / 255.0),
-                NormalizeVideo(mean, std),
-                ShortSideScale(size=side_size),
-                CenterCropVideo(crop_size),
-                PackPathway(),
-            ]
-        ),
+        transform=Compose(transform_list),
     )
 
     video = EncodedVideo.from_path(video_path, decode_audio=False, decoder="pyav")
@@ -306,14 +312,22 @@ if __name__ == "__main__":
         help="Path to the output folder where features will be stored",
     )
     parser.add_argument("--tr", type=float, default=1.49, help="TR")
+    parser.add_argument("--center_crop", action="store_true", help="Center crop video")
+    
 
 
     args = parser.parse_args()
 
+    global center_crop
+    center_crop = args.center_crop
+
     output_folder = f"{args.output_folder}_tr{args.tr}"
+
+    output_folder = f"{output_folder}_no_center_crop" if not args.center_crop else output_folder
     process_video_folder(
         args.input_folder,
         output_folder,
         model,
         args.tr,
+        center_crop=args.center_crop
     )

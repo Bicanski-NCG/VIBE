@@ -10,14 +10,30 @@ class EnsembleAverager(nn.Module):
     Ensemble averaging for FMRIModel-compatible models.
     Loads multiple checkpoints and averages their predictions.
     """
-    def __init__(self, models, device="cuda"):
+    def __init__(self, models, device="cuda", normalize=False, norm_dim=(1, 2), eps=1e-8):
         super().__init__()
         self.device = device
         self.models = nn.ModuleList()
+        self.normalize = normalize
+        self.norm_dim = norm_dim
+        self.eps = eps
         for model in models:
             # Load the model from checkpoint, move to device, set eval mode
             model.eval()
             self.models.append(model)
+
+    def _row_normalise(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Per‑batch normalisation over the specified `norm_dim` axes.
+        x: [B, T, V]
+        Returns a tensor with the same shape, zero‑mean and unit‑var
+        along time+voxel dims for each batch row.
+        """
+        if not self.normalize:
+            return x
+        mu  = x.mean(dim=self.norm_dim, keepdim=True)
+        std = x.std(dim=self.norm_dim, keepdim=True, unbiased=False).clamp(min=self.eps)
+        return (x - mu) / std
 
     @torch.no_grad()
     def forward(self, features, subject_ids, run_ids, attention_mask):
@@ -32,7 +48,9 @@ class EnsembleAverager(nn.Module):
         """
         preds = []
         for model in self.models:
-            preds.append(model(features, subject_ids, run_ids, attention_mask))
+            pred = model(features, subject_ids, run_ids, attention_mask)
+            pred = self._row_normalise(pred)          # [B, T, V] normalised
+            preds.append(pred)
         stacked = torch.stack(preds, dim=0)  # [N_models, B, T, V]
         return stacked.mean(dim=0)           # [B, T, V]
 

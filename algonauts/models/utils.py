@@ -74,7 +74,9 @@ def build_model(config):
         fusion_heads=config.fusion_heads,
         fusion_dropout=config.fusion_dropout,
         subject_dropout_prob=config.subject_dropout_prob,
-        use_fusion_transformer=config.use_fusion_transformer,
+        use_mla_in_fusion=config.use_mla_in_fusion,
+        use_mla_in_predict=config.use_mla_in_predict,
+
         proj_layers=config.proj_layers,
         fuse_mode=config.fuse_mode,
         subject_count=config.subject_count,
@@ -94,9 +96,13 @@ def build_model(config):
         num_pre_tokens=config.num_pre_tokens,
         n_prepend_zeros=config.n_prepend_zeros,
         # MLA params
-        d_c=config.d_c,
-        d_c1=config.d_c1,
-        d_rotate=config.d_rotate,
+        d_c_fusion=config.fusion_d_c,
+        d_c1_fusion=config.fusion_d_c,
+        d_rotate_fusion=config.fusion_d_c,
+
+        d_c_predict=config.predict_d_c,
+        d_c1_predict=config.predict_d_c1,
+        d_rotate_predict=config.predict_d_rotate,
     )
     model.to(config.device)
     return model

@@ -3,9 +3,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from scipy.stats import gamma
-from algonauts.models.rope import PredictionTransformerRoPE
 
-from mla import MLATransformerEncoderLayer, MLATransformerEncoder
+from algonauts.models.rope import PredictionTransformerRoPE
+from algonauts.models.mla import MLATransformerEncoderLayer, MLATransformerEncoder
 
 
 def spm_hrf(tr: float, size: int):
@@ -29,12 +29,12 @@ class ModalityFusionTransformer(nn.Module):
         dropout_rate=0.3,
         subject_dropout_prob=0.0,
         fuse_mode: str = "concat",
-        use_transformer: bool = True,
+        use_mla_in_fusion: bool = True,
         use_run_embeddings: bool = False,
         num_layers_projection: int = 1,
         d_c: int = 32,
         d_c1: int = 32,
-        d_rotate: int = 16,
+        d_rotate: int = 0,
     ):
         super().__init__()
         self.fuse_mode = fuse_mode
@@ -51,17 +51,7 @@ class ModalityFusionTransformer(nn.Module):
             self.run_embeddings = nn.Embedding(3, hidden_dim)
         self.null_subject_index = subject_count
 
-        if use_transformer:
-            encoder_layer = nn.TransformerEncoderLayer(
-                d_model=hidden_dim,
-                nhead=num_heads,
-                dim_feedforward=hidden_dim * 4,
-                batch_first=True,
-                activation="gelu",
-                dropout=dropout_rate,
-            )
-
-            '''            
+        if use_mla_in_fusion:
             encoder_layer = MLATransformerEncoderLayer(
                 d_model=hidden_dim,
                 num_head=num_heads,
@@ -73,12 +63,19 @@ class ModalityFusionTransformer(nn.Module):
                 d_c1=d_c1,
                 d_rotate=d_rotate,
             )
-            '''
-
             self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-            # self.transformer = MLATransformerEncoder(encoder_layer, num_layers=num_layers)
+
         else:
-            self.transformer = nn.Identity()
+            encoder_layer = nn.TransformerEncoderLayer(
+                d_model=hidden_dim,
+                nhead=num_heads,
+                dim_feedforward=hidden_dim * 4,
+                batch_first=True,
+                activation="gelu",
+                dropout=dropout_rate,
+            )
+
+            self.transformer = MLATransformerEncoder(encoder_layer, num_layers=num_layers)
 
     def build_projection(self, input_dim, output_dim, num_layers):
         layers = []
@@ -153,35 +150,32 @@ class PredictionTransformer(nn.Module):
         num_heads=16,
         max_len=500,
         dropout=0.3,
+        d_c_predictor=128,
+        d_c1_predictor=128,
+        d_rotate_predictor=32
     ):
         super().__init__()
         self.pos_encoder = FixedPositionalEncoding(input_dim, max_len)
-
-        '''
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=input_dim,
-            nhead=num_heads,
-            dropout=dropout,
-            dim_feedforward=input_dim * 4,
-            batch_first=True,
-            activation="gelu",
-        )
-        '''
 
         encoder_layer = MLATransformerEncoderLayer(
             d_model=input_dim,
             num_head=num_heads,
             dim_feedforward=input_dim * 4,
             batch_first=True,
+            dropout=dropout,
             activation='gelu',
-        )
-        # self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+            d_c=d_c_predictor,
+            d_c1=d_c1_predictor,
+            d_rotate=d_rotate_predictor
+            )
+
         self.transformer = MLATransformerEncoder(encoder_layer, num_layers=num_layers)
 
         self.output_head = nn.Linear(input_dim, output_dim)
 
     def forward(self, x, attn_mask):
-        x = self.pos_encoder(x)
+        # we already have RoPE in MLA
+        # x = self.pos_encoder(x)
         seq_len = x.size(1)
         device = x.device
         causal_mask = torch.triu(
@@ -232,7 +226,17 @@ class FMRIModel(nn.Module):
         fusion_heads=4,
         fusion_dropout=0.3,
         subject_dropout_prob=0.0,
-        use_fusion_transformer=True,
+        use_mla_in_fusion=True,
+        use_mla_in_predict=True,
+
+        d_c_predict=32,
+        d_c1_predict=32,
+        d_rotate_predict=32,
+
+        d_c_fusion=32,
+        d_c1_fusion=32,
+        d_rotate_fusion=0,
+
         use_run_embeddings=False,
         proj_layers=1,
         fuse_mode="concat",
@@ -252,10 +256,6 @@ class FMRIModel(nn.Module):
         n_prepend_zeros=10,
         # training
         mask_prob=0.2,
-        # MLA params
-        d_c=32,
-        d_c1=32,
-        d_rotate=16,
     ):
         """
         FMRIModel combines modality fusion and temporal prediction.
@@ -292,12 +292,12 @@ class FMRIModel(nn.Module):
             dropout_rate=fusion_dropout,
             subject_dropout_prob=subject_dropout_prob,
             fuse_mode=fuse_mode,
-            use_transformer=use_fusion_transformer,
+            use_transformer=use_mla_in_fusion,
             use_run_embeddings=use_run_embeddings,
             num_layers_projection=proj_layers,
-            d_c=d_c,
-            d_c1=d_c1,
-            d_rotate=d_rotate,
+            d_c=d_c_fusion,
+            d_c1=d_c1_fusion,
+            d_rotate=d_rotate_fusion,
         )
 
         fused_dim = (
@@ -316,15 +316,26 @@ class FMRIModel(nn.Module):
             # register a placeholder so .to(device) works later
             self.register_buffer("pre_tokens", torch.empty(0, fused_dim))
 
+        if use_mla_in_predict:
+            self.predictor = PredictionTransformer(
+                input_dim=fused_dim,
+                output_dim=output_dim,
+                num_heads=pred_layers,
+                dropout=pred_dropout,
+                d_c1_predictor=d_c1_predict,
+                d_c_predictor=d_c_predict,
+                d_rotate_predictor=d_rotate_predict
+            )
 
-        self.predictor = PredictionTransformerRoPE(
-            input_dim=fused_dim,
-            output_dim=output_dim,
-            num_layers=pred_layers,
-            num_heads=pred_heads,
-            dropout=pred_dropout,
-            rope_pct=rope_pct,
-        )
+        else:
+            self.predictor = PredictionTransformerRoPE(
+                input_dim=fused_dim,
+                output_dim=output_dim,
+                num_layers=pred_layers,
+                num_heads=pred_heads,
+                dropout=pred_dropout,
+                rope_pct=rope_pct,
+            )
 
         self.n_prepend_zeros = n_prepend_zeros
 

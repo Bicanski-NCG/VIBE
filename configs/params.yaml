@@ -98,7 +98,10 @@ fusion_layers: 1
 fusion_heads: 4
 fusion_dropout: 0.3
 subject_dropout_prob: 0.0
-use_fusion_transformer: true
+
+use_mla_in_fusion: true
+use_mla_in_predict: true
+
 use_run_embeddings: false
 proj_layers: 1
 subject_count: 4
@@ -109,14 +112,13 @@ pred_heads: 8
 pred_dropout: 0.3
 rope_pct: 1.0
 
-d_c: 32  # Default value, can be swept
-# K/V compression dimension for MLA
+fusion_d_c: 128  # Default value, can be swept
+fusion_d_c1: 128 # Default value, can be swept
+fusion_d_rotate: 0 # Default value, can be swept
 
-d_c1: 32 # Default value, can be swept
-# Q compression dimension for MLA
-
-d_rotate: 16 # Default value, can be swept
-# Rotary position embedding dim for MLA
+predict_d_c: 128  # Default value, can be swept
+predict_d_c1: 128 # Default value, can be swept
+predict_d_rotate: 16 # Default value, can be swept
 
 # HRF convolution hyperparameters
 use_hrf_conv: false

@@ -163,6 +163,7 @@ def run_epoch_val(loader, model, device, laplacians, config):
         + config.lambda_sp_adj * (epoch_spatial_adjacency_loss / len(loader))
         + config.lambda_net_adj * (epoch_network_adjacency_loss / len(loader))
     )
+    model.train()
     return (
         total_loss,
         epoch_negative_corr_loss / len(loader),

@@ -50,11 +50,11 @@ def main():
 
     # Run the training command
     with logger.step("🚀 Starting training..."):
-        run_id, n_epochs = train_main(args)
+        run_id, n_iters = train_main(args)
 
     # Run the retraining command
     with logger.step("🚀 Starting retraining..."):
-        retrain_main(args, run_id=run_id, n_epochs=n_epochs)
+        retrain_main(args, run_id=run_id, n_iters=n_iters)
 
 if __name__ == "__main__":
     try:

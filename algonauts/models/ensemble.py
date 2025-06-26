@@ -67,22 +67,22 @@ class ROIAdaptiveEnsemble(nn.Module):
     """
     def __init__(self,
                  roi_labels:   list,       # [V] with ROI indices 0..R-1
-                 roi_to_epoch: dict,                 # {roi_idx: epoch_int}
+                 roi_to_iters: dict,                 # {roi_idx: epoch_int}
                  ckpt_dir:     Path,
                  device:       str = "cuda"):
         super().__init__()
         self.device = device
 
         # Preload one model per unique epoch in roi_to_epoch
-        self.roi_to_epoch = roi_to_epoch
+        self.roi_to_iters = roi_to_iters
         self.roi_labels = np.array(roi_labels, dtype="<U20")
-        self.epochs = sorted(set(roi_to_epoch.values()))
+        self.iters = sorted(set(roi_to_iters.values()))
         self.models = {}
-        for e in self.epochs:
-            ckpt_path = ckpt_dir / f"epoch_{e}_final_model.pt"
+        for i in self.iters:
+            ckpt_path = ckpt_dir / f"iter_{i}_final_model.pt"
             model, _ = load_model_from_ckpt(str(ckpt_path), ckpt_dir / "config.yaml")
             model.eval()
-            self.models[e] = model
+            self.models[i] = model
 
 
     @torch.no_grad()
@@ -98,11 +98,11 @@ class ROIAdaptiveEnsemble(nn.Module):
 
         # 2) Build final output by picking per-voxel predictions
         # We'll create a [B, T, V] tensor by stacking and indexing
-        B, T, V = preds[self.epochs[0]].shape
+        B, T, V = preds[self.iters[0]].shape
         out = torch.empty((B, T, V), device=self.device)
 
         # For each ROI index r, mask voxels and copy from preds[e_r]
-        for r, e_r in self.roi_to_epoch.items():
+        for r, e_r in self.roi_to_iters.items():
             # Create a 1D voxel mask for this ROI
             voxel_mask = (self.roi_labels == r)  # shape [V]
             # Copy predictions for voxels in this ROI

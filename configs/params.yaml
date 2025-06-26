@@ -7,7 +7,8 @@
 # ------------- Training -------------
 
 # Max epochs
-epochs: 15
+epochs: 10
+val_iter_freq: 100
 
 # Batch size
 batch_size: 4

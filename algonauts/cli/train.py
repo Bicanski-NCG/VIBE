@@ -145,17 +145,17 @@ def main(args=None):
             # Run training under PyTorch profiler
             with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
                          record_shapes=True) as prof:
-                best_val_epoch = train_val_loop(model, optimizer, scheduler, train_loader,
+                best_val_iter = train_val_loop(model, optimizer, scheduler, train_loader,
                                                 valid_loader, ckpt_dir, config)
             # Export Chrome trace for analysis
             prof.export_chrome_trace(str(ckpt_dir / "profiler_trace.json"))
             logger.info(f"📝 Profiling trace saved to {ckpt_dir / 'profiler_trace.json'}")
         else:
-            best_val_epoch, max_roi_epoch = train_val_loop(model, optimizer, scheduler, train_loader,
+            best_val_iter, max_roi_iter = train_val_loop(model, optimizer, scheduler, train_loader,
                                                            valid_loader, ckpt_dir, config)
-        # Save the number of epochs trained
-        with open(ckpt_dir / "n_epochs.txt", "w") as f:
-            f.write(f"{best_val_epoch}\n")
+        # Save the number of iters trained
+        with open(ckpt_dir / "n_iters.txt", "w") as f:
+            f.write(f"{best_val_iter}\n")
     
     # -------------------- DIAGNOSTICS --------------------
     if not args.no_diagnostics:
@@ -166,9 +166,9 @@ def main(args=None):
 
     # -------------------- FINISH --------------------
     logger.info("🏁 Training complete. Saving best model and W&B run summary.")
-    wandb.run.summary["best_val_epoch"] = best_val_epoch
+    wandb.run.summary["best_val_iter"] = best_val_iter
     wandb.finish()
-    return run_id, best_val_epoch
+    return run_id, best_val_iter
 
 
 if __name__ == "__main__":

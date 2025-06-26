@@ -1,45 +1,46 @@
 from __future__ import annotations
 from pathlib import Path
 from tqdm import tqdm
-import time
-import argparse
-import os
+import time, argparse, os
 from functools import lru_cache
 from typing import List
 
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.amp import autocast
-import librosa
-
-from algonauts.features.audio.audio_io import stream_clips, open_audio
+from audio_io import stream_clips
+from nnAudio.Spectrogram import Gammatonegram
 
 
 # ────────────────────────────────────────────────────────────────
-# 1. cochleagram (CQT proxy for gammatone)
+# 1. Gammatone cochleagram  (Santoro‑style, 128 ERB bands)
 # ────────────────────────────────────────────────────────────────
 def cochleagram(
-    wav: np.ndarray, sr: int, *,
-    n_bins: int = 128,
-    bins_per_oct: int = 24,
+    wav: np.ndarray,
+    sr: int,
+    *,
+    n_filters: int = 128,
     fmin: float = 50.0,
+    fmax: float = 8_000.0,
     hop_len: int = 235,
 ) -> torch.Tensor:
     """
-    Return log-amplitude cochleagram  (F, T)  float32.
+    Log‑power gammatone spectrogram (F, T) – float32.
+    Uses nnAudio (GPU if input is CUDA).
     """
-    C = librosa.cqt(
-        wav,
+    wav_t = torch.from_numpy(wav).float().unsqueeze(0)  # (1,T)
+    gt = Gammatonegram(
         sr=sr,
         hop_length=hop_len,
-        n_bins=n_bins,
-        bins_per_octave=bins_per_oct,
+        n_bins=n_filters,
         fmin=fmin,
-        pad_mode="reflect",
-        window="hann",
-    )
-    return torch.from_numpy(np.log1p(np.abs(C))).float()      # (F,T)
+        fmax=fmax,
+        verbose=False,
+        power_spectrogram=True,   # linear power
+    ).to(wav_t.device)
+    spec = gt(wav_t).squeeze(0)         # (F,T)
+    spec = spec.clamp_min(1e-9)
+    return torch.log1p(spec).float()    # log‑power
 
 
 # ────────────────────────────────────────────────────────────────
@@ -49,8 +50,8 @@ def cochleagram(
 def build_mtf_bank(
     frame_hz: float,
     F_bins: int,
-    Ω: tuple[float, ...],
-    ω: tuple[float, ...],
+    Ω: tuple[float, ...] = (0.25, 0.5, 1, 2, 4, 8),
+    ω: tuple[float, ...] = (0.5, 1, 2, 4, 8, 16),
     directions: tuple[int, int] = (+1, -1),   # +1 = upward, -1 = downward
     phis: tuple[float, float] = (0.0, np.pi/2),  # quadrature
     k_f: int = 31,
@@ -63,7 +64,7 @@ def build_mtf_bank(
 
     One filter per (Ω, ω, dir, phase).
     """
-    F_axis = np.linspace(-1, 1, k_f) * np.log2(2)   # ±1 octave
+    F_axis = np.linspace(-0.5, 0.5, k_f) * np.log2(F_bins / 2)   # ± spectral range
     T_axis = np.linspace(-1, 1, k_t)                # ±1 s (scaled later)
     Fg, Tg = np.meshgrid(F_axis, T_axis, indexing="ij")   # (F_k,T_k)
 
@@ -92,11 +93,11 @@ def mtf_features_for_clip(
     sr: int,
     *,
     hop_len: int = 235,
-    Ω: tuple[float, ...] = (0.5, 1, 2, 4),
-    ω: tuple[float, ...] = (1, 3, 9, 27),
+    Ω: tuple[float, ...] = (0.25, 0.5, 1, 2, 4, 8),
+    ω: tuple[float, ...] = (0.5, 1, 2, 4, 8, 16),
 ) -> torch.Tensor:
     """
-    Returns 1-D feature tensor (F_bins × len(Ω) × len(ω)) float32 CPU.
+    Returns 1-D feature tensor (F_bins × len(Ω) × len(ω) × directions × 2 + 2) float32 CPU.
     """
     # 1. cochleagram   -----------------------------------------------------
     coch = cochleagram(
@@ -104,13 +105,19 @@ def mtf_features_for_clip(
         hop_len=hop_len
     ).cuda()                 # (F,T)
 
+    # 5. frequency-wise whitening
+    coch = (coch - coch.mean(0, keepdim=True)) / (coch.std(0, keepdim=True) + 1e-6)
+
+    # 6. onset envelope
+    onset_env = torch.relu(coch[:, 1:] - coch[:, :-1]).mean(0, keepdim=True)  # (1,T)
+
     F_bins, T_frames = coch.shape
     coch = coch.unsqueeze(0).unsqueeze(0)              # (1,1,F,T)
 
-    # 2. bank & conv   -----------------------------------------------------
+    # 7. FP16 conv & cube-root NL
     frame_hz = sr / hop_len
+    coch = coch
     bank = build_mtf_bank(frame_hz, F_bins, Ω, ω)
-
     resp = F.conv2d(coch, bank,
                     padding=(bank.shape[2]//2, bank.shape[3]//2))
         # resp: (1, N_filters, F, T)
@@ -120,15 +127,21 @@ def mtf_features_for_clip(
     resp = resp.view(1, D, 2, F_bins, T_frames)  # (1,D,2,F,T)
     energy = resp.pow(2).sum(2).sqrt()           # (1,D,F,T)
 
-    # 4. half-wave → compressive NL
-    energy = F.relu(energy).pow(0.5)
+    # 7. cube-root NL
+    energy = F.relu(energy).pow(0.33)      # cube‑root NL
 
-    # 5. average over direction  (+1/-1)
-    energy = energy.view(1, len(Ω)*len(ω), 2, F_bins, T_frames).mean(2) # (1,16,F,T)
+    # 8. keep direction channels, mean+max pooling
+    # Remove averaging over direction
+    mean_T = energy.mean(-1)           # (1,D,F)
+    max_T  = energy.amax(-1)           # (1,D,F)
+    feats_mod = torch.cat([mean_T, max_T], dim=1)   # (1,2D,F)
 
-    # 6. average over time frames (within TR)
-    feats = energy.mean(-1).squeeze(0).transpose(0,1)  # (F_bins,16)
-    return feats.flatten().cpu()                       # (F_bins*16,)
+    # Append onset mean/max
+    onset_mean = onset_env.mean(-1)    # (1,1)
+    onset_max  = onset_env.amax(-1)    # (1,1)
+    feats_mod = feats_mod.squeeze(0).transpose(0,1)  # (F,2D)
+    feats = torch.cat([feats_mod.flatten(), onset_mean.flatten(), onset_max.flatten()])
+    return feats.cpu()
 
 
 # ────────────────────────────────────────────────────────────────
@@ -140,8 +153,8 @@ def mtf_features_for_file(
     tr_sec: float = 1.49,
     target_sr: int = 16_000,
     hop_len: int = 235,
-    Ω: tuple[float, ...] = (0.5, 1, 2, 4),
-    ω: tuple[float, ...] = (1, 3, 9, 27),
+    Ω: tuple[float, ...] = (0.25, 0.5, 1, 2, 4, 8),
+    ω: tuple[float, ...] = (0.5, 1, 2, 4, 8, 16),
     load_full: bool = True,
 ) -> torch.Tensor:
     """

@@ -5,7 +5,7 @@
 # Initial working directory:
 #SBATCH -D /u/danielcs/algonauts/Algonauts-Decoding
 # Job name
-#SBATCH -J feat-gabor
+#SBATCH -J feat-saliency
 #
 #SBATCH --ntasks=1
 #
@@ -19,4 +19,4 @@
 
 module load ffmpeg
 
-uv run python -u algonauts/features/video/gabor.py --input_folder data/raw/stimuli/movies --output_folder data/feat_out/gabor_filters_new --tr 1.49 --decode_height 128
+uv run python -u algonauts/features/video/saliency.py --input_folder data/raw/stimuli/movies --output_folder data/feat_out/saliency --tr 1.49 --decode_height 240

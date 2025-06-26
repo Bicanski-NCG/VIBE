@@ -197,11 +197,8 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                 np.concatenate(fmri_pred, axis=0),
             )
             labels = np.array(group_masker.labels[1:])
-            print(f"Labels: {labels}")
             roi_idxs = {roi: np.argwhere(labels == roi) for roi in labels} # 1: skip background
-            print(roi_idxs)
             for roi_name, roi_idx in roi_idxs.items():
-                print(f"Evaluating ROI: {roi_name} with {len(roi_idx)} voxels")
                 roi_r = np.mean(voxelwise_r[roi_idx])
 
                 # Track best validation scores per ROI

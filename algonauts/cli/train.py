@@ -98,6 +98,10 @@ def main(args=None):
         wandb.init(entity=entity_name, project=project_name, config=vars(config), 
                    name=config.run_name, dir=output_dir / "wandb")
 
+        # Save the config YAMLs to W&B
+        wandb.save(str(features_path), base_path=features_path.parent, policy="now")
+        wandb.save(str(params_path), base_path=params_path.parent, policy="now")
+
         # If running a W&B sweep, wandb.config contains overridden hyperparameters.
         # Merge them back into our local config dict so later code picks them up.
         config = Config(**wandb.config)

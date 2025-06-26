@@ -10,7 +10,6 @@ from typing import List
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.amp import autocast
 from tqdm import tqdm
 
 
@@ -78,10 +77,10 @@ def build_spatiotemporal_gabor_bank(
     import itertools
 
     if spatial_lambdas is None:
-        spatial_lambdas = [7, 10, 14, 20, 28]
+        spatial_lambdas = [7, 10, 14, 20, 28, 40]   # + coarser 40 px scale
     # --- temporal parameters tied to the actual movie frame‑rate ---
     if temporal_freqs is None:
-        base = [1, 2, 4, 8, 12]                     # ≤  half Nyquist (14.97 Hz)
+        base = [0.25, 0.5, 1, 2, 4, 8, 12]          # include slower 0.25 & 0.5 Hz
         temporal_freqs = base + [-f for f in base]  # signed → opposite motion
     if ksize_t is None:
         # keep Gaussian envelope spanning ≈108 ms (as in the paper)
@@ -89,7 +88,7 @@ def build_spatiotemporal_gabor_bank(
         if ksize_t % 2 == 0:
             ksize_t += 1                            # force odd length
     if thetas is None:
-        thetas = np.linspace(0, np.pi, 12, endpoint=False)   # 12 directions
+        thetas = np.linspace(0, np.pi, 18, endpoint=False)   # 18 directions (20° steps)
     phis = [0.0, np.pi / 2]                                  # quadrature
 
     sigma_t = ksize_t / 4
@@ -120,7 +119,7 @@ def build_spatiotemporal_gabor_bank(
 
 
 # Build the spatiotemporal Gabor filter bank and a convenience constant
-ST_GABOR_BANK = build_spatiotemporal_gabor_bank(fps=29.94)
+ST_GABOR_BANK = build_spatiotemporal_gabor_bank(fps=29.94, ksize=61)
 KSIZE_T = ST_GABOR_BANK.shape[2]
 KSIZE_S = ST_GABOR_BANK.shape[3]    # spatial kernel size (H=W)
 N_ST_PAIRS = ST_GABOR_BANK.shape[0] // 2   # number of cosine–sine pairs
@@ -161,7 +160,7 @@ def gabor_features_st(clip_u8: torch.Tensor, colour_opponent: bool = False) -> t
         Y = (chan - chan.mean()) / (chan.std() + 1e-6)
         Y = Y.unsqueeze(0).unsqueeze(0)                        # (1,1,T,H,W)
         resp = F.conv3d(Y, ST_GABOR_BANK,
-                        stride=(1, 4, 4),
+                        stride=(1, 2, 2),         # finer spatial stride
                         padding=(KSIZE_T // 2, KSIZE_S // 2, KSIZE_S // 2))
         resp = resp.view(1, N_ST_PAIRS, 2, *resp.shape[-3:]).pow(2).sum(dim=2).sqrt()
         resp = F.relu(resp).pow(0.5)
@@ -266,7 +265,8 @@ if __name__ == "__main__":
           f"\nColour‑opponent: {args.colour_opponent}"
           f"\n--------------------------------")
     
-    print(f"Gabor filter bank size: {N_ST_PAIRS} filters, memory footprint: {sys.getsizeof(ST_GABOR_BANK) / 1e6:.2f} MB")
+    print(f"Gabor filter bank size: {N_ST_PAIRS if not args.colour_opponent else 3 * N_ST_PAIRS} filters,"
+          f" memory footprint: {sys.getsizeof(ST_GABOR_BANK) / 1e6:.2f} MB")
 
     walk_folder(
         Path(args.input_folder),

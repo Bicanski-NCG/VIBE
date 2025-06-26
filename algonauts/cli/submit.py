@@ -257,6 +257,7 @@ def main():
         # Load each model and collect
         models = []
         for chk in checkpoint_names:
+            print(f"Loading model from checkpoint: {chk}")
             ckpt_dir = output_root / "checkpoints" / chk
             if args.roi_ensemble:
                 m = ROIAdaptiveEnsemble(
@@ -272,9 +273,10 @@ def main():
                 )
             m.to(device).eval()
             models.append(m)
-        model = EnsembleAverager(models=models, device=device)
+        model = EnsembleAverager(models=models, device=device, normalize=True)
     else:
         # Single checkpoint path
+        print(f"Loading model from checkpoint: {args.checkpoint}")
         checkpoint = args.checkpoint
         checkpoint_dir = output_root / "checkpoints" / checkpoint
         model, config = load_model_from_ckpt(

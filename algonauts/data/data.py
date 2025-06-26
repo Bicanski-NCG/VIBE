@@ -125,10 +125,16 @@ class FMRI_Dataset(Dataset):
     
     def _get_feature(self, path):
         if path.endswith(".npy"):
-            arr = np.load(path, mmap_mode='r')
-            return torch.tensor(arr, dtype=torch.float32).squeeze()
+            try:
+                arr = np.load(path, mmap_mode='r')
+                return torch.tensor(arr, dtype=torch.float32).squeeze()
+            except EOFError:
+                raise ValueError(f"Corrupted feature file: {path}")
         elif path.endswith(".pt"):
-            return torch.load(path, map_location="cpu").squeeze().float()
+            try:
+                return torch.load(path, map_location="cpu").squeeze().float()
+            except EOFError:
+                raise ValueError(f"Corrupted feature file: {path}")
         else:
             raise ValueError(f"Unknown feature file extension: {path}")
 

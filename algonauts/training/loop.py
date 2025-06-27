@@ -307,8 +307,8 @@ def train_val_loop(
                     stopping = True
                     break
 
-        scheduler.step()
-        logger.info(f"🔄 LR stepped → {optimizer.param_groups[0]['lr']:.2e}")
+                scheduler.step()
+                logger.info(f"🔄 LR stepped → {optimizer.param_groups[0]['lr']:.2e}")
 
     roi_names = np.array(group_masker.labels[1:])
     torch.save(roi_names, ckpt_dir / "roi_names.pt")
@@ -351,6 +351,9 @@ def full_loop(
             full_losses = train_step(model, batch, optimizer, laplacians, config)
             full_losses_total = [x + y for x, y in zip(full_losses, full_losses_total)]
 
+            if global_step % config.val_iter_freq == 0:
+                scheduler.step()
+
             for roi_name, best_iter in roi_to_iter.items():
                 if best_iter == global_step:
                     logger.info(f"💾 Saved {roi_name} final model.")
@@ -367,7 +370,6 @@ def full_loop(
                 )
 
         full_losses_total = [x / len(full_loader) for x in full_losses_total]
-        scheduler.step()
         logger.close_step()
         wandb.log(
             {

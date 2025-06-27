@@ -117,10 +117,10 @@ class PredictionTransformerRoPE(nn.Module):
         key_padding_mask = ~attn_mask          # True = PAD (matches our attention fn)
         seq_len = x.size(1)
         device = x.device
-        causal = torch.triu(
-            torch.ones(seq_len, seq_len, device=device, dtype=torch.bool), 1
-        )
-
+        #causal = torch.triu(
+        #    torch.ones(seq_len, seq_len, device=device, dtype=torch.bool), 1
+       # )
+        causal = None
         for layer in self.layers:
             x = layer(x, attn_mask=causal, key_padding_mask=key_padding_mask)
 

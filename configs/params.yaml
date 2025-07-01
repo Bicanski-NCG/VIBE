@@ -7,7 +7,7 @@
 # ------------- Training -------------
 
 # Max epochs
-epochs: 10
+epochs: 8
 val_iter_freq: 100
 
 # Batch size
@@ -17,16 +17,16 @@ batch_size: 4
 lr: 0.0001
 
 # Number of warmup epochs
-warmup_epochs: 0
+warmup_steps_ratio: 0.00
 
 # Multiplicative starting factor for warmup
-warmup_start_lr_factor: 0.1
+warmup_start_lr_factor: 0.00001
 
 # Weight decay
 weight_decay: 0.0001
 
 # Epochs patience
-early_stop_patience: 1
+early_stop_patience: 2
 
 # Loss weights
 lambda_sample: 0

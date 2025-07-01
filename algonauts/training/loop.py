@@ -69,6 +69,7 @@ def train_step(model, batch, optimizer, laplacians, config):
     optimizer.step()
     wandb.log(
         {
+            "lr": optimizer.param_groups[0]["lr"],
             "train_loss": loss.item(),
             "train_neg_corr_loss": negative_corr_loss.item(),
             "train_sample_loss": sample_loss.item(),
@@ -202,7 +203,7 @@ def train_val_loop(
             # ---------- training step -------------------------------------
             global_step += 1
             train_losses = train_step(model, batch, optimizer, laplacians, config)
-
+            scheduler.step()
             train_losses_total = [
                 x + y for x, y in zip(train_losses, train_losses_total)
             ]
@@ -307,9 +308,6 @@ def train_val_loop(
                     stopping = True
                     break
 
-                scheduler.step()
-                logger.info(f"🔄 LR stepped → {optimizer.param_groups[0]['lr']:.2e}")
-
     roi_names = np.array(group_masker.labels[1:])
     torch.save(roi_names, ckpt_dir / "roi_names.pt")
     torch.save(roi_to_iter, ckpt_dir / "roi_to_iters.pt")
@@ -351,8 +349,28 @@ def full_loop(
             full_losses = train_step(model, batch, optimizer, laplacians, config)
             full_losses_total = [x + y for x, y in zip(full_losses, full_losses_total)]
 
+            scheduler.step()
             if global_step % config.val_iter_freq == 0:
-                scheduler.step()
+                full_losses_total = [x / config.val_iter_freq for x in full_losses_total]
+                wandb.log(
+                    {
+                        "retrain_epoch": epoch,
+                        "full/loss": full_losses_total[0],
+                        "full/neg_corr": full_losses_total[1],
+                        "full/sample": full_losses_total[2],
+                        "full/roi": full_losses_total[3],
+                        "full/mse": full_losses_total[4],
+                        "full/lr": (
+                            optimizer.param_groups[0]["lr"]
+                            if len(optimizer.param_groups) == 1
+                            else optimizer.param_groups[1]["lr"]
+                        ),
+                    },
+                )
+                logger.info(f"🔄 LR stepped → {optimizer.param_groups[0]['lr']:.2e}")
+                logger.info(f"🔎 NegCorr = {full_losses_total[1]:.4f}")
+                full_losses_total = [0, 0, 0, 0, 0]
+                logger.close_step()
 
             for roi_name, best_iter in roi_to_iter.items():
                 if best_iter == global_step:
@@ -368,27 +386,3 @@ def full_loop(
                 wandb.log(
                     {"final_model_path": str(ckpt_dir / "final_model.pt")}, commit=False
                 )
-
-        full_losses_total = [x / len(full_loader) for x in full_losses_total]
-        logger.close_step()
-        wandb.log(
-            {
-                "retrain_epoch": epoch,
-                "full/loss": full_losses_total[0],
-                "full/neg_corr": full_losses_total[1],
-                "full/sample": full_losses_total[2],
-                "full/roi": full_losses_total[3],
-                "full/mse": full_losses_total[4],
-                "full/lr": (
-                    optimizer.param_groups[0]["lr"]
-                    if len(optimizer.param_groups) == 1
-                    else optimizer.param_groups[1]["lr"]
-                ),
-            },
-        )
-
-        logger.info(f"🔄 LR stepped → {optimizer.param_groups[0]['lr']:.2e}")
-        logger.info(f"🔎 NegCorr = {full_losses_total[1]:.4f}")
-        full_losses_total = [0, 0, 0, 0, 0]
-
-        logger.close_step()

@@ -131,10 +131,6 @@ def main(args=None):
         # Watch the model
         wandb.watch(model, "val/neg_corr", log_graph=True, log_freq=200)
 
-        # Optimizer & scheduler created outside the loop
-        with logger.step("⚙️ Creating optimizer & scheduler..."):
-            optimizer, scheduler = create_optimizer_and_scheduler(model, config)
-
         # Persist the config YAML to checkpoints directory
         config_path = ckpt_dir / "config.yaml"
         config.save(config_path)
@@ -142,6 +138,10 @@ def main(args=None):
     # -------------------- DATA --------------------
     with logger.step("📥 Building DataLoaders..."):
         train_loader, valid_loader = get_train_val_loaders(config)
+    
+    # Optimizer & scheduler created outside the loop
+    with logger.step("⚙️ Creating optimizer & scheduler..."):
+        optimizer, scheduler = create_optimizer_and_scheduler(model, config, len(train_loader))
 
     # -------------------- TRAIN --------------------
     with logger.step("🚀 Starting training loop..."):

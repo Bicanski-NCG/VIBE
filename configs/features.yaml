@@ -18,6 +18,7 @@ features:
   slow_res3_act: "Visual/SlowFast_R101_tr1.49_no_center_crop/slow_res3_act"
   slow_res5_act: "Visual/SlowFast_R101_tr1.49_no_center_crop/slow_res5_act"
   slow_stem_act: "Visual/SlowFast_R101_tr1.49_no_center_crop/slow_stem_act"
+  depth_features: "Visual/VideoDepthAnything/proj_out"
   audio_long_context: "Audio/Wave2Vec2/features_chunk1.49_len60_before50"
   qwen_emotional: "Emotional/Qwen2.5_14_Full_tr1.49"
   audio_beats_high: "Audio/BEATS_Full_tr1.49_ctx10.0/high"
@@ -41,6 +42,7 @@ input_dims:
   #fast_stem_act: 1024
   pool_concat: 9216
   slow_res3_act: 4096
+  #depth_features: 1024
   #slow_res5_act: 4096
   #slow_stem_act: 8192
   #audio_long_context: 2048

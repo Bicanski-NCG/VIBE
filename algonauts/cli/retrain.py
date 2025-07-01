@@ -5,6 +5,7 @@ from pathlib import Path
 import os
 
 from algonauts.data import get_full_loader
+from algonauts.data.loader import get_train_val_loaders
 from algonauts.models import load_model_from_ckpt, load_initial_state
 from algonauts.training import create_optimizer_and_scheduler, full_loop
 from algonauts.utils import logger, ensure_paths_exist
@@ -75,10 +76,6 @@ def main(args=None, run_id=None, n_iters=None):
     with logger.step("🖥️ Moving model to device …"):
         model.to(device)
 
-    # Create optimizer and scheduler for full retrain
-    with logger.step("⚙️ Creating optimizer & scheduler …"):
-        optimizer_full, scheduler_full = create_optimizer_and_scheduler(model, config)
-
     # Load initial model and random state
     with logger.step("🔄 Restoring initial state …"):
         load_initial_state(model, ckpt_dir / "initial_model.pt", ckpt_dir / "initial_random_state.pt")
@@ -86,6 +83,11 @@ def main(args=None, run_id=None, n_iters=None):
     # Construct full data loader
     with logger.step("📥 Building full DataLoader …"):
         full_loader = get_full_loader(config)
+
+    # Create optimizer and scheduler for full retrain
+    with logger.step("⚙️ Creating optimizer & scheduler …"):
+        num_train_batches = len(get_train_val_loaders(config)[0])
+        optimizer_full, scheduler_full = create_optimizer_and_scheduler(model, config, num_train_batches)
 
     # Retrain the model on the full dataset
     with logger.step("🚀 Starting full retrain …"):

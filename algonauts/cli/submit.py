@@ -71,14 +71,14 @@ def predict_fmri_for_test_set(
         sample_counts = np.load(sample_dict_path, allow_pickle=True).item()
 
         for episode in sample_counts.keys():
-            print(f"→  Processing {subj} - {episode}")
+            print(f"→  Processing {subj} - {episode}", flush=True)
             n_samples = sample_counts[episode]
             try:
                 features = load_features_for_episode(
                     episode, feature_paths, normalization_stats
                 )
             except FileNotFoundError as e:
-                print(f"Skipping {episode}: {e}")
+                print(f"Skipping {episode}: {e}", flush=True)
                 continue
 
             for key in features:
@@ -124,7 +124,7 @@ def predict_fmri_for_season7(
     output_dict = {}
 
     for subj in subjects:
-        print(f"\n→  Processing {subj}")
+        print(f"\n→  Processing {subj}", flush=True)
         output_dict[subj] = {}
         subj_id_t = torch.tensor([subject_name2idx[subj]], device=device)
 
@@ -225,9 +225,9 @@ def main():
     if not args.checkpoint and not args.ensemble:
         raise ValueError("Please provide a checkpoint to load or an ensemble list.")
     if args.checkpoint:
-        print(f"Using checkpoint: {args.checkpoint}")
+        print(f"Using checkpoint: {args.checkpoint}", flush=True)
     else:
-        print(f"Using ensemble checkpoints: {args.ensemble}")
+        print(f"Using ensemble checkpoints: {args.ensemble}", flush=True)
 
     output_root = Path(args.output_dir or os.getenv("OUTPUT_DIR", "data/outputs"))
     submission_dir = output_root / "submissions"
@@ -245,6 +245,7 @@ def main():
 
     # Build model according to --ensemble or single checkpoint, with optional ROI wrap
     device = "cuda"
+    load_device = "cpu" if len(args.ensemble) > 20 else device
     if args.ensemble:
         # Ensemble averaging over provided run IDs
         checkpoint_names = args.ensemble
@@ -257,26 +258,26 @@ def main():
         # Load each model and collect
         models = []
         for chk in checkpoint_names:
-            print(f"Loading model from checkpoint: {chk}")
+            print(f"Loading model from checkpoint: {chk}", flush=True)
             ckpt_dir = output_root / "checkpoints" / chk
             if args.roi_ensemble:
                 m = ROIAdaptiveEnsemble(
                     roi_labels=torch.load(ckpt_dir / "roi_names.pt", weights_only=False),
                     roi_to_epoch=torch.load(ckpt_dir / "roi_to_epoch.pt", weights_only=False),
                     ckpt_dir=ckpt_dir,
-                    device=device,
+                    device=load_device,
                 )
             else:
                 m, _ = load_model_from_ckpt(
                     model_ckpt_path=str(ckpt_dir / "final_model.pt"),
                     params_path=str(ckpt_dir / "config.yaml"),
                 )
-            m.to(device).eval()
+            m.to(load_device).eval()
             models.append(m)
         model = EnsembleAverager(models=models, device=device, normalize=True)
     else:
         # Single checkpoint path
-        print(f"Loading model from checkpoint: {args.checkpoint}")
+        print(f"Loading model from checkpoint: {args.checkpoint}", flush=True)
         checkpoint = args.checkpoint
         checkpoint_dir = output_root / "checkpoints" / checkpoint
         model, config = load_model_from_ckpt(
@@ -298,7 +299,7 @@ def main():
 
     feature_paths = {name: Path(config.features_dir) / path for name, path in config.features.items()}
 
-    print("Starting predictions for fMRI season 7 episodes...")
+    print("Starting predictions for fMRI season 7 episodes...", flush=True)
     predictions = predict_fmri_for_test_set(
         model=model,
         feature_paths=feature_paths,
@@ -313,7 +314,7 @@ def main():
     zip_file = submission_dir / f"{name}.zip"
     with zipfile.ZipFile(zip_file, "w") as zipf:
         zipf.write(output_file, f"{name}.npy")
-    print(f"Saved predictions to {zip_file}")
+    print(f"Saved predictions to {zip_file}", flush=True)
 
 if __name__ == "__main__":
     main()

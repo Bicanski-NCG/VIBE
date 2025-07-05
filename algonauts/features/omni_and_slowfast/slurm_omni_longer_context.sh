@@ -11,13 +11,13 @@
 #SBATCH --constraint="gpu"
 #
 # --- default case: use a single GPU on a shared node ---
-#SBATCH --gres=gpu:a100:1
+#SBATCH --gres=gpu:a100:2
 #SBATCH --cpus-per-task=12
 #SBATCH --mem=120000
 #
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=dixit@cbs.mpg.de
-#SBATCH --time=12:00:00
+#SBATCH --time=1:00:00
 
 module purge
 module load anaconda/3/2023.03
@@ -27,4 +27,4 @@ conda deactivate
 source .venv/bin/activate
 module load ffmpeg/4.4
 module load gcc/13
-srun uv run python extract_omni_features.py "$@"
+srun uv run python omni_3B_longer_context.py "$@"

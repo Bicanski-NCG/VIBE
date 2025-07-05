@@ -1,0 +1,23 @@
+[project]
+name = "video-depth"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = "==3.10"
+dependencies = [
+    "decord>=0.6.0",
+    "easydict>=1.13",
+    "einops==0.4.1",
+    "imageio==2.19.3",
+    "imageio-ffmpeg==0.4.7",
+    "jupyter>=1.1.1",
+    "matplotlib>=3.10.3",
+    "numpy==1.23.1",
+    "opencv-python>=4.11.0.86",
+    "openexr==3.3.1",
+    "pillow>=11.2.1",
+    "torch==2.1.1",
+    "torchvision==0.16.1",
+    "tqdm>=4.67.1",
+    "xformers==0.0.23",
+]

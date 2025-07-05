@@ -31,6 +31,20 @@ import wandb
 import torch
 import glob
 
+from algonauts.utils.utils import voxelwise_pearsonr
+
+# ----------------------------------------------------------------------
+# W&B helper
+# ----------------------------------------------------------------------
+def _wandb_log_image(img_path: Path, key_prefix: str = "viz"):
+    """
+    Log *img_path* to Weights & Biases under key ``f"{key_prefix}/{name}"``.
+    Does nothing if no active wandb run.
+    """
+    if wandb.run is not None:
+        wandb.log({f"{key_prefix}/{img_path.name}": wandb.Image(str(img_path))},
+                  commit=False)
+
 # ————————————————————————
 # Local imports
 # ————————————————————————
@@ -96,27 +110,6 @@ def load_and_label_atlas(atlas_path: os.PathLike | str,
     )
     masker.fit()
     return masker
-
-
-def voxelwise_pearsonr(y_true: np.ndarray,
-                       y_pred: np.ndarray) -> np.ndarray:
-    """
-    Voxel-wise Pearson correlation.
-
-    Parameters
-    ----------
-    y_true, y_pred : (T, V) float arrays
-
-    Returns
-    -------
-    (V,)  ndarray of Pearson *r*.
-    """
-    return np.array(
-        [pearsonr(y_true[:, v], y_pred[:, v])[0]
-         for v in range(y_true.shape[1])],
-        dtype=np.float32
-    )
-
 
 # ==========================================================================
 # Scalar diagnostics
@@ -187,6 +180,7 @@ def plot_glass_brain(r: np.ndarray,
     path = out_dir / name
     plt.savefig(path, dpi=150, bbox_inches='tight')
     disp.close()
+    _wandb_log_image(path)
     return path
 
 
@@ -203,6 +197,7 @@ def plot_corr_histogram(r: np.ndarray,
     path = out_dir / f"corr_hist_{subj_id}.png"
     fig.tight_layout()
     fig.savefig(path, dpi=150)
+    _wandb_log_image(path)
     plt.close(fig)
     return path
 
@@ -236,6 +231,7 @@ def plot_time_correlation(r_t: np.ndarray,
     path = out_dir / f"time_corr_{subj_id}.png"
     fig.tight_layout()
     fig.savefig(path, dpi=150)
+    _wandb_log_image(path)
     plt.close(fig)
     return path
 
@@ -290,6 +286,7 @@ def plot_residual_glass(y_true: np.ndarray,
     path = out_dir / f"glass_residual_{subj_id}.png"
     plt.savefig(path, dpi=150, bbox_inches='tight')
     disp.close()
+    _wandb_log_image(path)
     return path
 
 
@@ -315,6 +312,7 @@ def plot_pred_vs_true_scatter(y_true: np.ndarray,
     path = out_dir / f"scatter_pred_true_{subj_id}.png"
     fig.tight_layout()
     fig.savefig(path, dpi=150, bbox_inches='tight')
+    _wandb_log_image(path)
     plt.close(fig)
     return path
 
@@ -341,6 +339,7 @@ def plot_residual_psd(y_true: np.ndarray,
     path = out_dir / f"psd_residual_{subj_id}.png"
     fig.tight_layout()
     fig.savefig(path, dpi=150)
+    _wandb_log_image(path)
     plt.close(fig)
     return path
 
@@ -375,7 +374,7 @@ def plot_diagnostics(model, loader, config, out_dir):
 
         plot_glass_brain(r, sid, masker, out_dir=str(out_dir))
 
-        plot_corr_histogram(r, sid, out_dir=str(out_dir))
+        # plot_corr_histogram(r, sid, out_dir=str(out_dir))
 
         df_roi = roi_table(r, sid, masker, out_dir=str(out_dir))
         table_roi = wandb.Table(dataframe=df_roi.astype({"mean_r": float}))
@@ -390,13 +389,13 @@ def plot_diagnostics(model, loader, config, out_dir):
         r_t = np.array([pearsonr(true[t], pred[t])[0] for t in range(true.shape[0])])
         plot_time_correlation(r_t, sid, out_dir=str(out_dir))
 
-        plot_glass_bads(true, pred, sid, masker, out_dir=str(out_dir), pct_bads=config.pct_bads)
+        # plot_glass_bads(true, pred, sid, masker, out_dir=str(out_dir), pct_bads=config.pct_bads)
 
-        plot_residual_glass(true, pred, sid, masker, out_dir=str(out_dir))
+        # plot_residual_glass(true, pred, sid, masker, out_dir=str(out_dir))
 
-        plot_pred_vs_true_scatter(true, pred, sid, out_dir=str(out_dir))
+        # plot_pred_vs_true_scatter(true, pred, sid, out_dir=str(out_dir))
 
-        plot_residual_psd(true, pred, sid, out_dir=str(out_dir), fs=1/1.49)
+        # plot_residual_psd(true, pred, sid, out_dir=str(out_dir), fs=1/1.49)
 
     # ----- Group diagnostics -----
     logger.info("📊 Group diagnostics …")
@@ -405,7 +404,7 @@ def plot_diagnostics(model, loader, config, out_dir):
 
     plot_glass_brain(group_mean_r, "group", group_masker, out_dir=str(out_dir))
 
-    plot_corr_histogram(group_mean_r, "group", out_dir=str(out_dir))
+    # plot_corr_histogram(group_mean_r, "group", out_dir=str(out_dir))
 
     df_group_roi = roi_table(group_mean_r, "group", group_masker, out_dir=str(out_dir))
     table_roi = wandb.Table(dataframe=df_group_roi.astype({"mean_r": float}))
@@ -430,25 +429,23 @@ def plot_diagnostics(model, loader, config, out_dir):
     group_r_t = np.nanmean(r_t_mat, axis=0)   # (max_T,)
     plot_time_correlation(group_r_t, "group", out_dir=str(out_dir))
 
-    group_res_true = np.concatenate([t for t in fmri_true], 0)
-    group_res_pred = np.concatenate([p for p in fmri_pred], 0)
-    plot_residual_glass(group_res_true, group_res_pred, "group", group_masker, out_dir=str(out_dir))
+    # group_res_true = np.concatenate([t for t in fmri_true], 0)
+    # group_res_pred = np.concatenate([p for p in fmri_pred], 0)
+    # plot_residual_glass(group_res_true, group_res_pred, "group", group_masker, out_dir=str(out_dir))
 
-    plot_glass_bads(
-        group_res_true,
-        group_res_pred,
-        "group",
-        group_masker,
-        out_dir=str(out_dir),
-        pct_bads=config.pct_bads
-    )
+    # plot_glass_bads(
+    #     group_res_true,
+    #     group_res_pred,
+    #     "group",
+    #     group_masker,
+    #     out_dir=str(out_dir),
+    #     pct_bads=config.pct_bads
+    # )
 
-    plot_pred_vs_true_scatter(
-        group_res_true, group_res_pred, "group", out_dir=str(out_dir), max_points=config.max_scatter_points
-    )
+    # plot_pred_vs_true_scatter(
+    #     group_res_true, group_res_pred, "group", out_dir=str(out_dir), max_points=config.max_scatter_points
+    # )
 
-    plot_residual_psd(group_res_true, group_res_pred, "group", out_dir=str(out_dir), fs=1/1.49)
+    # plot_residual_psd(group_res_true, group_res_pred, "group", out_dir=str(out_dir), fs=1/1.49)
 
-    # Log every png
-    for png in glob.glob(str(out_dir / "*.png")):
-        wandb.log({f"viz/{Path(png).name}": wandb.Image(png)}, commit=False)
+    # (W&B logging of images is now done directly in each plot_… function.)

@@ -8,3 +8,4 @@ from .utils import (
 
 from . import adjacency_matrices as adj
 from . import viz, logger
+from .feature_analysis import run_feature_analyses

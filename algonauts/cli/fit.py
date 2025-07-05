@@ -61,6 +61,7 @@ def main():
 
     # Run the retraining command
     with logger.step("🚀 Starting retraining..."):
+        args.no_diagnostics = False
         retrain_main(args, run_id=run_id, n_epochs=n_epochs)
 
 if __name__ == "__main__":

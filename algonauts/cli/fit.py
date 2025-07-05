@@ -45,8 +45,15 @@ def main():
     ensure_paths_exist(
         (features_dir, "features_dir"),
         (data_dir,     "data_dir"),
-        (output_dir,   "output_dir"),
     )
+
+    try:
+        ensure_paths_exist(
+            (output_dir,   "output_dir"),
+        )
+    except:
+        # create output_dir
+        os.mkdir(output_dir)
 
     # Run the training command
     with logger.step("🚀 Starting training..."):

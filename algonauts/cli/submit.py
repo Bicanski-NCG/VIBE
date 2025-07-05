@@ -237,11 +237,17 @@ def main():
 
     ensure_paths_exist(
         (output_root, "output_dir"),
-        (submission_dir, "submission_dir"),
         *(([(checkpoint_dir, "checkpoint_dir")] if checkpoint_dir else [])),
         *(([(final_model_path, "final_model.pt")] if final_model_path else [])),
         *(([(config_path, "config.yaml")] if config_path else [])),
     )
+
+    try:
+        ensure_paths_exist(
+            (submission_dir, "submission_dir"),
+        )
+    except:
+        os.mkdir(submission_dir)
 
     # Build model according to --ensemble or single checkpoint, with optional ROI wrap
     device = "cuda"

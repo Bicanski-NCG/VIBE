@@ -5,7 +5,7 @@
 # Initial working directory:
 #SBATCH -D ./
 # Job name
-#SBATCH -J qwen_omni
+#SBATCH -J vda
 #
 #SBATCH --ntasks=1
 #SBATCH --constraint="gpu"
@@ -19,12 +19,4 @@
 #SBATCH --mail-user=dixit@cbs.mpg.de
 #SBATCH --time=12:00:00
 
-module purge
-module load anaconda/3/2023.03
-module unload cuda
-module load cuda/12.6
-conda deactivate
-source .venv/bin/activate
-module load ffmpeg/4.4
-module load gcc/13
-srun uv run python extract_omni_features.py "$@"
+srun uv run python extract_features.py "$@"

@@ -24,6 +24,12 @@ features:
   audio_beats_low: "Audio/BEATS_Full_tr1.49_ctx10.0/low"
   audio_whisper_high: "Audio/WhisperV3-Large-ctx30-stereoFalse/high"
   audio_whisper_low: "Audio/WhisperV3-Large-ctx30-stereoFalse/low"
+  vjepa2_vitl_final: "Vjepa2/outs_tr1.49_len6_before3/vjepa2_vitl_final_features"
+  vjepa2_vitl_pred5: "Vjepa2/outs_tr1.49_len6_before3/vjepa2_vitl_predictor_5_layer_norm"
+  vjepa2_vitl_enc18: "Vjepa2/outs_tr1.49_len6_before3/vjepa2_vitl_encoder_18_layer_norm2"
+  vjepa2_ap: "Vjepa2/outs_tr1.49_len6_before3/v-jepa2-ac-classifier-out"
+  vjepa2_ap_block0: "Vjepa2/outs_tr1.49_len6_before3/v-jepa2-ac-classifier-block0-fc2"
+  vjepa2_ap_block_last: "Vjepa2/outs_tr1.49_len6_before3/v-jepa2-ac-classifier-block-last-fc2"
 
 input_dims:
   aud_last: 2560
@@ -51,3 +57,9 @@ input_dims:
   #audio_whisper_low: 1280
   #audio_mfcc_mono: 128
   #audio_mfcc_stereo: 128
+  # vjepa2_vitl_final: 9216
+  # vjepa2_vitl_pred5: 3456
+  # vjepa2_vitl_enc18: 9216
+  # vjepa2_ap: 174
+  # vjepa2_ap_block0: 9216
+  # vjepa2_ap_block_last: 9216

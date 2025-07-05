@@ -43,7 +43,7 @@ spatial_sigma: 0.05
 lambda_hrf: 0.001
 
 # Log roi correlations every N epochs. Set to 0 to disable ROI logging
-roi_log_interval: 0
+roi_log_interval: 1
 
 # Number of networks to extract, one of [7, 17]
 yeo_networks: 17

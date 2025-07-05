@@ -9,6 +9,7 @@ from captum.attr import ShapleyValues, ShapleyValueSampling
 
 from algonauts.utils.utils import evaluate_corr
 from algonauts.utils import logger
+from algonauts.training.losses import masked_negative_pearson_loss
 
 
 def shapley_captum(model, val_loader, device, modalities,
@@ -50,28 +51,37 @@ def shapley_captum(model, val_loader, device, modalities,
     # ---- Wrap model.forward so Captum gets tensors/tuples ----------
     def forward_packed(*args):
         """
-        Captum passes (*packed_inputs_cpu, *additional_forward_args).
+        Captum calls this with
+            (*packed_inputs, subject_ids, run_ids, attention_mask, fmri_true)
 
-        1. Move modality tensors and extras to `device`.
-        2. Run the model.
-        3. Collapse *all* spatial / temporal dims to a single scalar
-           by taking the mean.  This keeps Captum's working tensor
-           tiny: (n_samples, |F| + 1).
+        We:
+          1. Move modality tensors and extras to `device`.
+          2. Run the model to get voxel predictions  (B, V).
+          3. Compute Pearson r with the ground‑truth fMRI for each sample.
+          4. Return the vector of r's  – one scalar per batch element.
         """
         n_mod = len(modalities)
-        feats_cpu  = args[:n_mod]
-        extras_cpu = args[n_mod:]
+        feats_cpu   = args[:n_mod]           # tuple of modality tensors
+        fmri_true   = args[n_mod]
+        attn_mask   = args[n_mod + 1]
+        subj_ids    = args[n_mod + 2]
+        run_ids     = args[n_mod + 3]
 
         feats_gpu = {m: feats_cpu[i].to(device, non_blocking=True)
                      for i, m in enumerate(modalities)}
-        extras_gpu = [x for x in extras_cpu]
+        subj_ids  = subj_ids
+        run_ids   = run_ids
+        attn_mask = attn_mask.to(device)
+        fmri_true = fmri_true.to(device)     # (B, V)
 
-        out = model(feats_gpu, *extras_gpu)
+        preds = model(feats_gpu, subj_ids, run_ids, attn_mask)  # (B, V)
 
-        # collapse to scalar per batch element
-        if out.ndim > 1:
-            out = out.mean(dim=tuple(range(1, out.ndim)))
-        return out
+        # -------- per‑sample Pearson correlation ---------------------
+        r_batch = -masked_negative_pearson_loss(
+            preds, fmri_true, attn_mask,
+            zero_center=True, network_mask=None
+        )
+        return r_batch
 
     attr_engine = ShapleyValueSampling(forward_packed)
 
@@ -88,11 +98,12 @@ def shapley_captum(model, val_loader, device, modalities,
         baselines     = tuple(torch.zeros_like(t) for t in packed_inputs)
 
         # gather any extra batch‑specific tensors the model expects
-        extras = []
-        for key in ("subject_ids", "run_ids", "attention_masks"):
-            if key in batch:
-                tensor = batch[key].to(device, non_blocking=True) if isinstance(batch[key], torch.Tensor) else batch[key]
-                extras.append(tensor)
+        extras = [
+            batch["fmri"].to(device, non_blocking=True),  # ground‑truth fMRI
+            batch["attention_masks"].to(device, non_blocking=True),  # attention mask
+            batch["subject_ids"],  # subject IDs
+            batch["run_ids"]  # run IDs
+        ]
         additional_forward_args = tuple(extras)
 
         feature_mask = tuple(
@@ -126,12 +137,12 @@ def shapley_captum(model, val_loader, device, modalities,
                             columns=["modality", "phi"])
     fig, ax = plt.subplots(figsize=(6, 3))
     ax.bar(list(phi.keys()), list(phi.values()))
-    ax.set_ylabel("ϕ (mean scalar)")
+    ax.set_ylabel("ϕ (Δ masked Pearson r)")
     ax.set_xticklabels(phi.keys(), rotation=45, ha="right")
-    ax.set_title("Captum Shapley (scalar output)")
+    ax.set_title("Captum Shapley – contribution to masked r")
     plt.tight_layout()
-    wandb.log({"shapley_captum/bar_chart": wandb.Image(fig),
-               "shapley_captum/table":     bar_table})
+    wandb.log({"shapley/bar_chart": wandb.Image(fig),
+               "shapley/table":     bar_table})
     plt.close(fig)
 
     return phi
@@ -238,7 +249,7 @@ def run_feature_analyses(model, val_loader, device):
         delta_dict = feature_single_ablation(model, val_loader, device, base_r)
 
     with logger.step(f"🔹 Running Shapley analysis on {len(blocks)} blocks."):
-        phi_dict = shapley_captum(model, val_loader, device, blocks, n_samples=512, keep_frac=1)
+        phi_dict = shapley_captum(model, val_loader, device, blocks, n_samples=512, keep_frac=0.5)
 
     if len(blocks) <= EXACT_CUTOFF:
         with logger.step("🔹 Pairwise redundancy"):

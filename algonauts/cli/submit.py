@@ -38,7 +38,15 @@ def load_features_for_episode(episode_id, feature_paths, normalization_stats=Non
             feat = torch.load(path, map_location="cpu").squeeze().float()
         else:
             raise ValueError(f"Unknown feature file extension: {path}")
-        if normalization_stats and f"{modality}_mean" in normalization_stats:
+
+
+        if normalization_stats and normalization_stats.get(modality) and normalization_stats.get(modality).get("mean"):
+            feat = normalize_feature(
+                feat,
+                normalization_stats[modality]["mean"],
+                normalization_stats[modality]["std"]
+            )
+        elif normalization_stats and f"{modality}_mean" in normalization_stats: #left this in for possible backward compatibility
             feat = normalize_feature(
                 feat,
                 normalization_stats[f"{modality}_mean"],

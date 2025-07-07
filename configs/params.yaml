@@ -49,8 +49,9 @@ roi_log_interval: 1
 yeo_networks: 17
 
 # Probability of dropping entire modality
-modality_dropout_prob: 0.0
-
+modality_dropout_prob: 0.1
+# Replace dropped modality by zeros ('zeros') or gaussian ('gaussian')
+modality_dropout_mode: gaussian
 # ------------- Data -------------
 
 # Augment data with training noise. Set to 0.0 to disable

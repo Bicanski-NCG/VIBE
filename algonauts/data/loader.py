@@ -10,7 +10,7 @@ from algonauts.utils import logger
 def get_train_val_loaders(config):
     """Return train and validation DataLoaders."""
     # Assume normalization stats have been precomputed
-    norm_stats = torch.load("normalization_stats.pt")
+    norm_stats = None#torch.load("normalization_stats.pt")
     logger.info("📏 Loaded voxel‑wise normalization stats.")
 
     # Prepend the features directory to each feature path
@@ -22,8 +22,13 @@ def get_train_val_loaders(config):
                       input_dims=config.input_dims,
                       modalities=config.modalities,
                       noise_std=config.train_noise_std,
-                      normalization_stats=norm_stats if config.use_normalization else None,
-                      oversample_factor=config.oversample_factor)
+                      normalization_stats=norm_stats,
+                      oversample_factor=config.oversample_factor,
+                      modality_dropout_mode = config.modality_dropout_mode,
+                      modality_dropout_prob = config.modality_dropout_prob,
+                      normalize_features = config.use_normalization
+                      
+                      )
 
     if config.filter_name is not None:
         filter_fn = lambda sample: sample["name"] not in config.filter_name

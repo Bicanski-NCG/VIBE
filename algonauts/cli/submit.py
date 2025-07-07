@@ -277,7 +277,7 @@ def main():
             if args.roi_ensemble:
                 m = ROIAdaptiveEnsemble(
                     roi_labels=torch.load(ckpt_dir / "roi_names.pt", weights_only=False),
-                    roi_to_epoch=torch.load(ckpt_dir / "roi_to_epoch.pt", weights_only=False),,
+                    roi_to_epoch=torch.load(ckpt_dir / "roi_to_epoch.pt", weights_only=False),
                     ckpt_dir=ckpt_dir,
                     device=load_device,
                 )

@@ -6,7 +6,8 @@ import torch
 from functools import lru_cache
 from nilearn.datasets import fetch_atlas_schaefer_2018
 from scipy.stats import pearsonr
-
+import os
+from tqdm import tqdm
 
 def voxelwise_pearsonr(y_true: np.ndarray,
                        y_pred: np.ndarray) -> np.ndarray:
@@ -166,3 +167,93 @@ def ensure_paths_exist(*pairs):
         p = Path(p)
         if not p.exists():
             raise FileNotFoundError(f"{pretty} not found: {p}")
+        
+
+
+def compute_statistics(config, cov_univariate=True,include_ood = False):
+
+    feature_paths = config.features
+    normalization_stats = {}
+
+    for feature, path in tqdm(feature_paths.items()):
+        path = os.path.join(config.features_dir,path)
+        print(path)
+        M = 0
+        mean = None
+        M2 = None  # For Welford's algorithm to compute variance/covariance
+
+        for root, _, files in os.walk(path):
+            for file in tqdm(files):
+                full_path = os.path.join(root, file)
+                if include_ood ==False:
+                    if 'ood' in full_path:
+                        continue
+
+                if full_path.endswith('.npy'):
+                    data = torch.from_numpy(np.load(full_path)).float()
+                elif full_path.endswith('.pt'):
+                    data = torch.load(full_path, map_location='cpu').float()
+                else:
+                    continue # Skip non-data files
+
+                N = data.shape[-2]
+
+                if M == 0:
+                    mean = torch.mean(data, dim=-2)
+                    if cov_univariate:
+                        M2 = torch.sum((data - mean.unsqueeze(-2))**2, dim=-2)
+                    else:
+                        centered_data = data - mean.unsqueeze(-2)
+                        M2 = torch.matmul(centered_data.transpose(-1, -2), centered_data)
+                else:
+                    old_mean = mean.clone()
+                    mean, M2_new_contribution = increment_mean_and_M2(data, mean, M, cov_univariate)
+                    M2 += M2_new_contribution
+
+                M += N
+
+        if M > 0:
+            if cov_univariate:
+                std = torch.sqrt(M2 / (M-1))
+            else:
+                # For covariance, M2 is already the sum of outer products of centered data
+                # We need to divide by M-1 for sample covariance, or M for population covariance.
+                # Assuming sample covariance for 'state-of-the-art' for statistical purposes.
+                # If M=1, covariance is undefined, so handle that case.
+                if M > 1:
+                    std = M2 / (M - 1)
+                else:
+                    std = torch.zeros_like(M2) # Or raise an error, depending on desired behavior
+        
+            normalization_stats[feature] = {"mean": mean, "std": std}
+
+    return normalization_stats
+
+def increment_mean_and_M2(data, mean, M, cov_univariate):
+    N = data.shape[-2]
+    
+    # Current mean of the new batch
+    batch_mean = torch.mean(data, dim=-2)
+
+    # Calculate new combined mean
+    new_mean = (M * mean + N * batch_mean) / (M + N)
+
+    if cov_univariate:
+        # Update M2 (sum of squared differences) using a stable formula
+        delta = batch_mean - mean
+        M2_new_contribution = torch.sum((data - batch_mean.unsqueeze(-2))**2, dim=-2)
+        M2_new_contribution += M * N * delta**2 / (M + N)
+    else:
+        # Update M2 (sum of outer products of centered data) for covariance
+        # M2_B (sum of outer products for the new batch relative to its own mean)
+        centered_data_batch = data - batch_mean.unsqueeze(-2)
+        M2_new_batch = torch.matmul(centered_data_batch.transpose(-1, -2), centered_data_batch)
+
+        # Correction term for combining M2 values
+        # delta between old mean and new batch mean
+        delta_mean = batch_mean - mean
+        
+        M2_new_contribution = M2_new_batch + (M * N / (M + N)) * torch.outer(delta_mean, delta_mean)
+
+    return new_mean, M2_new_contribution
+

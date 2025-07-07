@@ -5,6 +5,27 @@ import numpy as np
 import torch
 from functools import lru_cache
 from nilearn.datasets import fetch_atlas_schaefer_2018
+from scipy.stats import pearsonr
+
+
+def voxelwise_pearsonr(y_true: np.ndarray,
+                       y_pred: np.ndarray) -> np.ndarray:
+    """
+    Voxel-wise Pearson correlation.
+
+    Parameters
+    ----------
+    y_true, y_pred : (T, V) float arrays
+
+    Returns
+    -------
+    (V,)  ndarray of Pearson *r*.
+    """
+    return np.array(
+        [pearsonr(y_true[:, v], y_pred[:, v])[0]
+         for v in range(y_true.shape[1])],
+        dtype=np.float32
+    )
 
 
 @lru_cache(maxsize=None) # We only ever use one atlas size
@@ -71,6 +92,57 @@ def collect_predictions(loader, model, device):
         subj_order.append(sid)
         atlas_paths.append(subj_to_atlas[sid])
     return fmri_true, fmri_pred, subj_order, atlas_paths
+
+
+def evaluate_corr(model,
+                  loader,
+                  *,
+                  device: str | torch.device = "cpu",
+                  preprocess=None) -> np.ndarray:
+    """
+    Voxel-wise Pearson r on *loader* using the same masking logic as
+    `collect_predictions`: only time-points whose attention_mask == 1
+    are included in the correlation.
+
+    Parameters
+    ----------
+    preprocess : callable(batch) → None
+        Optional in-place batch mutation used by ablation / permutation
+        diagnostics *before* tensors are moved to device.
+
+    Returns
+    -------
+    (V,) ndarray of Pearson r   (mean across all subjects / clips).
+    """
+    model.eval()
+    pred_chunks, true_chunks = [], []
+
+    with torch.no_grad():
+        for batch in loader:
+            if preprocess is not None:
+                preprocess(batch)
+
+            # --- move tensors ---
+            attn = batch["attention_masks"].to(device, non_blocking=True)   # (B,T)
+            fmri = batch["fmri"].to(device, non_blocking=True)              # (B,T,V)
+            feats = {k: batch[k].to(device, non_blocking=True)
+                     for k in loader.dataset.modalities}
+            subj = batch["subject_ids"]
+            run  = batch["run_ids"]
+
+            # --- forward ---
+            pred = model(feats, subj, run, attn)                            # (B,T,V)
+
+            # --- apply collect_predictions masking ---
+            for i in range(pred.size(0)):
+                valid = attn[i].bool()                                      # (T,)
+                if valid.any():
+                    pred_chunks.append(pred[i][valid].cpu().numpy())
+                    true_chunks.append(fmri[i][valid].cpu().numpy())
+
+    y_pred = np.concatenate(pred_chunks, axis=0)   # (T_total, V)
+    y_true = np.concatenate(true_chunks, axis=0)
+    return voxelwise_pearsonr(y_true, y_pred)
 
 
 def ensure_paths_exist(*pairs):

@@ -45,8 +45,15 @@ def main():
     ensure_paths_exist(
         (features_dir, "features_dir"),
         (data_dir,     "data_dir"),
-        (output_dir,   "output_dir"),
     )
+
+    try:
+        ensure_paths_exist(
+            (output_dir,   "output_dir"),
+        )
+    except:
+        # create output_dir
+        os.mkdir(output_dir)
 
     # Run the training command
     with logger.step("🚀 Starting training..."):
@@ -54,7 +61,8 @@ def main():
 
     # Run the retraining command
     with logger.step("🚀 Starting retraining..."):
-        retrain_main(args, run_id=run_id, n_iters=n_iters)
+        args.no_diagnostics = False
+        retrain_main(args, run_id=run_id, n_epochs=n_epochs)
 
 if __name__ == "__main__":
     try:

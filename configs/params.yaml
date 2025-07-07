@@ -31,7 +31,7 @@ early_stop_patience: 1
 # Loss weights
 lambda_sample: 0
 lambda_roi: 0
-lambda_mse: 0.01
+lambda_mse: 0.03
 lambda_net_adj: 0.0001
 lambda_sp_adj: 0.00001
 

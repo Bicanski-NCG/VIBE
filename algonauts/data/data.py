@@ -56,6 +56,7 @@ class FMRI_Dataset(Dataset):
                     if not normalization_stats.get(modality):
                         warnings.warn("Did not find all features of this dataset in the normalization_stats.pt. Will recompute them to be safe.")
                         normalization_stats_valid = False
+                        break
 
 
 

@@ -10,8 +10,8 @@ from algonauts.utils import logger
 def get_train_val_loaders(config):
     """Return train and validation DataLoaders."""
     # Assume normalization stats have been precomputed
-    norm_stats = None#torch.load("normalization_stats.pt")
-    logger.info("📏 Loaded voxel‑wise normalization stats.")
+    norm_stats = None # Outcommented to enforce recomputation torch.load("normalization_stats.pt")
+    #logger.info("📏 Loaded voxel‑wise normalization stats.")
 
     # Prepend the features directory to each feature path
     features_dir = Path(config.features_dir)

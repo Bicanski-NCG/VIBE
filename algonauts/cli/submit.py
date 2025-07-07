@@ -277,7 +277,7 @@ def main():
             if args.roi_ensemble:
                 m = ROIAdaptiveEnsemble(
                     roi_labels=torch.load(ckpt_dir / "roi_names.pt", weights_only=False),
-                    roi_to_iters=torch.load(ckpt_dir / "roi_to_iters.pt", weights_only=False),
+                    roi_to_epoch=torch.load(ckpt_dir / "roi_to_epoch.pt", weights_only=False),,
                     ckpt_dir=ckpt_dir,
                     device=load_device,
                 )
@@ -302,10 +302,10 @@ def main():
         if args.roi_ensemble:
             # Wrap in ROIAdaptiveEnsemble for per-ROI best iters
             roi_labels = torch.load(checkpoint_dir / "roi_names.pt", weights_only=False)
-            roi_to_iters = torch.load(checkpoint_dir / "roi_to_iters.pt", weights_only=False)
+            roi_to_epoch = torch.load(checkpoint_dir / "roi_to_epoch.pt", weights_only=False)
             model = ROIAdaptiveEnsemble(
                 roi_labels=roi_labels,
-                roi_to_iters=roi_to_iters,
+                roi_to_epoch=roi_to_epoch,
                 ckpt_dir=checkpoint_dir,
                 device=device,
             )

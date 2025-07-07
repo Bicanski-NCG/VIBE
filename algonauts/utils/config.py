@@ -68,9 +68,11 @@ class Config:
     # ─── Training ───
     mask_prob: float = 0.2
     modality_dropout_prob: float = 0.0
+    modality_dropout_mode: str = 'zeros'
     lr: float = 1e-4
     weight_decay: float = 0.01
     epochs: int = 10
+    val_iter_freq: int = 100
     warmup_epochs: int = 3
     warmup_start_lr_factor: float = 0.1
     early_stop_patience: int = 5

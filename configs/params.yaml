@@ -7,7 +7,8 @@
 # ------------- Training -------------
 
 # Max epochs
-epochs: 15
+epochs: 10
+val_iter_freq: 100
 
 # Batch size
 batch_size: 4
@@ -49,7 +50,8 @@ yeo_networks: 17
 
 # Probability of dropping entire modality
 modality_dropout_prob: 0.0
-
+# Replace dropped modality by zeros ('zeros') or gaussian ('gaussian')
+modality_dropout_mode: zeros
 # ------------- Data -------------
 
 # Augment data with training noise. Set to 0.0 to disable

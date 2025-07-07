@@ -6,7 +6,8 @@ import torch
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
-
+import warnings
+from tqdm import tqdm 
 
 class FMRI_Dataset(Dataset):
     def __init__(
@@ -20,16 +21,57 @@ class FMRI_Dataset(Dataset):
         oversample_factor=1,
         samples=None,
         normalize_bold=False,
+        modality_dropout_mode = 'zeros',
+        modality_dropout_prob = 0.1,
+        normalize_features = False
     ):
         super().__init__()
-        self.root_folder = root_folder_fmri
 
+        self.root_folder = root_folder_fmri
         self.feature_paths = feature_paths  # Dict of {modality: path}
+
+        
+
         self.input_dims = input_dims
         self.modalities = modalities
 
+        self.modality_dropout_prob = modality_dropout_prob
+        self.modality_dropout_mode = modality_dropout_mode
+
         self.noise_std = noise_std
+        self.normalize_features = normalize_features
+        if (normalization_stats is None) and ((self. modality_dropout_mode =='gaussian') or (self.normalize_features)):
+            warnings.warn(f"No normalization stats provided but required for the options you chose. ' \
+            'Will try to fetch them from current working directory {os.getcwd()}")
+            fname = 'normalization_stats.pt'
+            
+            normalization_stats_valid = False
+
+            if os.path.isfile('normalization_stats.pt'):
+                normalization_stats_valid = True
+
+                print('Found file at', os.getcwd(),fname)
+                normalization_stats = torch.load(fname)
+                for modality,path in feature_paths.items():
+                    if not normalization_stats.get(modality):
+                        warnings.warn("Did not find all features of this dataset in the normalization_stats.pt. Will recompute them to be safe.")
+                        normalization_stats_valid = False
+
+
+
+            if not normalization_stats_valid:
+                warnings.warn('No valid normalization stats provided. Will compute normalization stats and save in current directory. This might take a while.')
+                normalization_stats = compute_statistics(feature_paths)
+                torch.save(normalization_stats,fname)
+
+
+
+
+
+
+
         self.normalization_stats = normalization_stats
+
         self.oversample_factor = oversample_factor
         self.normalize_bold = normalize_bold  # enable/disable run‑wise z‑score
 
@@ -112,6 +154,7 @@ class FMRI_Dataset(Dataset):
                 )
 
     def normalize(self, data, mean, std):
+    
         return (data - mean) / std
     
     def _get_h5(self, path):
@@ -169,14 +212,34 @@ class FMRI_Dataset(Dataset):
             if data.isnan().any():
                 data = torch.nan_to_num(data, nan=0.0)
 
-            if (
-                self.normalization_stats
-                and modality + "_mean" in self.normalization_stats
-            ):
+            if self.modality_dropout_prob>0: 
+                if self.modality_dropout_mode =='zeros':
+                    if float(torch.rand(1)) < self.modality_dropout_prob:
+                        # Replace with zeros; keeps tensor shape & device
+                        data = torch.zeros_like(data)
+
+
+                elif self.modality_dropout_mode == 'gaussian':
+                    if float(torch.rand(1)) < self.modality_dropout_prob:
+                        
+                        X = torch.randn_like(data)
+                        mean = self.normalization_stats[modality]['mean']
+                        std = self.normalization_stats[modality]['std']
+                        data = mean + std*X
+
+
+
+
+
+
+            if (self.normalize_features and self.normalization_stats 
+                and self.normalization_stats.get(modality)
+                  and self.normalization_stats.get(modality).get('mean') ):
+                
                 data = self.normalize(
                     data,
-                    self.normalization_stats[f"{modality}_mean"],
-                    self.normalization_stats[f"{modality}_std"],
+                    self.normalization_stats[modality]["mean"],
+                    self.normalization_stats[modality]["std"]
                 )
 
             if self.noise_std > 0:
@@ -252,6 +315,9 @@ def split_dataset_by_name(dataset, val_name="06", val_run="all",
         noise_std=train_noise_std,
         samples=train_samples,
         normalize_bold=dataset.normalize_bold,
+        modality_dropout_mode = dataset.modality_dropout_mode,
+        modality_dropout_prob =  dataset.modality_dropout_prob,
+        normalize_features = dataset.normalize_features
         
     )
 
@@ -263,6 +329,9 @@ def split_dataset_by_name(dataset, val_name="06", val_run="all",
         noise_std=0.0,
         samples=val_samples,
         normalize_bold=normalize_validation_bold,
+        modality_dropout_mode = dataset.modality_dropout_mode,
+        modality_dropout_prob =  0.0, #no dropout in validation set
+        normalize_features = dataset.normalize_features
     )
 
     return train_ds, val_ds
@@ -380,3 +449,92 @@ def make_group_weights(dataset, filter_on: str):
             weights[idx_list] = group_lengths / subtotal
 
     return weights
+
+
+
+
+def compute_statistics(feature_paths, cov_univariate=True,include_ood = False):
+
+    normalization_stats = {}
+
+    for feature, path in tqdm(feature_paths.items()):
+        #path = os.path.join(config.features_dir,path)
+        #print(path)
+        M = 0
+        mean = None
+        M2 = None  # For Welford's algorithm to compute variance/covariance
+
+        for root, _, files in os.walk(path):
+            for file in tqdm(files):
+                full_path = os.path.join(root, file)
+                if include_ood ==False:
+                    if 'ood' in full_path:
+                        continue
+
+                if full_path.endswith('.npy'):
+                    data = torch.from_numpy(np.load(full_path)).float()
+                elif full_path.endswith('.pt'):
+                    data = torch.load(full_path, map_location='cpu').float()
+                else:
+                    continue # Skip non-data files
+
+                N = data.shape[-2]
+
+                if M == 0:
+                    mean = torch.mean(data, dim=-2)
+                    if cov_univariate:
+                        M2 = torch.sum((data - mean.unsqueeze(-2))**2, dim=-2)
+                    else:
+                        centered_data = data - mean.unsqueeze(-2)
+                        M2 = torch.matmul(centered_data.transpose(-1, -2), centered_data)
+                else:
+                    old_mean = mean.clone()
+                    mean, M2_new_contribution = increment_mean_and_M2(data, mean, M, cov_univariate)
+                    M2 += M2_new_contribution
+
+                M += N
+
+        if M > 0:
+            if cov_univariate:
+                std = torch.sqrt(M2 / (M-1))
+            else:
+                # For covariance, M2 is already the sum of outer products of centered data
+                # We need to divide by M-1 for sample covariance, or M for population covariance.
+                # Assuming sample covariance for 'state-of-the-art' for statistical purposes.
+                # If M=1, covariance is undefined, so handle that case.
+                if M > 1:
+                    std = M2 / (M - 1)
+                else:
+                    std = torch.zeros_like(M2) # Or raise an error, depending on desired behavior
+        
+            normalization_stats[feature] = {"mean": mean, "std": std}
+
+    return normalization_stats
+
+def increment_mean_and_M2(data, mean, M, cov_univariate):
+    N = data.shape[-2]
+    
+    # Current mean of the new batch
+    batch_mean = torch.mean(data, dim=-2)
+
+    # Calculate new combined mean
+    new_mean = (M * mean + N * batch_mean) / (M + N)
+
+    if cov_univariate:
+        # Update M2 (sum of squared differences) using a stable formula
+        delta = batch_mean - mean
+        M2_new_contribution = torch.sum((data - batch_mean.unsqueeze(-2))**2, dim=-2)
+        M2_new_contribution += M * N * delta**2 / (M + N)
+    else:
+        # Update M2 (sum of outer products of centered data) for covariance
+        # M2_B (sum of outer products for the new batch relative to its own mean)
+        centered_data_batch = data - batch_mean.unsqueeze(-2)
+        M2_new_batch = torch.matmul(centered_data_batch.transpose(-1, -2), centered_data_batch)
+
+        # Correction term for combining M2 values
+        # delta between old mean and new batch mean
+        delta_mean = batch_mean - mean
+        
+        M2_new_contribution = M2_new_batch + (M * N / (M + N)) * torch.outer(delta_mean, delta_mean)
+
+    return new_mean, M2_new_contribution

@@ -40,14 +40,6 @@ def run_epoch(loader, model, optimizer, device, is_train, laplacians, config):
     for batch in loader:
         features = {k: batch[k].to(device, non_blocking=True) for k in loader.dataset.modalities}
 
-        # Stochastic modality dropout
-        drop_prob = config.modality_dropout_prob  # e.g. 0.15 in params.yaml
-        if is_train and drop_prob > 0:
-            for mod in loader.dataset.modalities:
-                if float(torch.rand(1)) < drop_prob:
-                    # Replace with zeros; keeps tensor shape & device
-                    features[mod] = torch.zeros_like(features[mod])
-
         subject_ids = batch["subject_ids"]
         run_ids = batch["run_ids"]
         fmri = batch["fmri"].to(device)

@@ -20,6 +20,8 @@ class FMRI_Dataset(Dataset):
         oversample_factor=1,
         samples=None,
         normalize_bold=False,
+        modality_dropout_mode = 'zeros',
+        modality_dropout_prob = 0.1,
     ):
         super().__init__()
         self.root_folder = root_folder_fmri
@@ -30,6 +32,10 @@ class FMRI_Dataset(Dataset):
 
         self.noise_std = noise_std
         self.normalization_stats = normalization_stats
+
+        self.modality_dropout_prob = modality_dropout_prob
+        self.modality_dropout_mode = modality_dropout_mode
+
         self.oversample_factor = oversample_factor
         self.normalize_bold = normalize_bold  # enable/disable run‑wise z‑score
 
@@ -112,6 +118,7 @@ class FMRI_Dataset(Dataset):
                 )
 
     def normalize(self, data, mean, std):
+    
         return (data - mean) / std
     
     def _get_h5(self, path):
@@ -168,15 +175,21 @@ class FMRI_Dataset(Dataset):
 
             if data.isnan().any():
                 data = torch.nan_to_num(data, nan=0.0)
+            if self.modality_dropout_mode =='zeros':
+                if torch.
 
-            if (
-                self.normalization_stats
-                and modality + "_mean" in self.normalization_stats
-            ):
+            elif self.modality_dropout_mode == 'gaussian':
+
+
+
+            if (self.normalization_stats 
+                and self.normalization_stats.get(modality)
+                  and self.normalization_stats.get(modality).get('mean') ):
+                
                 data = self.normalize(
                     data,
-                    self.normalization_stats[f"{modality}_mean"],
-                    self.normalization_stats[f"{modality}_std"],
+                    self.normalization_stats[modality]["mean"],
+                    self.normalization_stats[modality]["std"]
                 )
 
             if self.noise_std > 0:

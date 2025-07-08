@@ -53,8 +53,8 @@ def run_epoch(loader, model, optimizer, device, is_train, laplacians, config):
             pred = model(features, subject_ids, run_ids,attn_mask)
             # pred (B,T,V)
             # fmri (B,T,V)
-            #pred = pred*loss_mask
-           #fmri = fmri*loss_mask
+            pred = pred*loss_mask
+            fmri = fmri*loss_mask
             negative_corr_loss = masked_negative_pearson_loss(pred, fmri, attn_mask)
             sample_loss = sample_similarity_loss(pred, fmri, attn_mask)
             roi_loss = roi_similarity_loss(pred, fmri, attn_mask)

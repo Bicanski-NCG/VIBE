@@ -274,7 +274,7 @@ class FMRI_Dataset(Dataset):
 
         loss_mask = self.get_loss_mask(dataset_name,subject_id,fmri_response_tensor)
 
-        return subject_id, run_id, features, fmri_response_tensor,loss_mask
+        return subject_id, run_id, features, fmri_response_tensor,loss_mask, dataset_name
 
 
 def compute_mean_std(dataset):
@@ -359,7 +359,7 @@ def split_dataset_by_name(dataset, val_name="06", val_run="all",
 
 
 def collate_fn(batch):
-    subject_ids, run_ids, features_list, fmri_responses,loss_mask = zip(*batch)
+    subject_ids, run_ids, features_list, fmri_responses,loss_mask,dataset_name = zip(*batch)
 
     all_modalities = features_list[0].keys()
     padded_features = {
@@ -385,7 +385,8 @@ def collate_fn(batch):
         **padded_features,
         "fmri": fmri_padded,
         "attention_masks": attention_masks,
-        "loss_mask":loss_mask_padded
+        "loss_mask":loss_mask_padded,
+        "dataset_names":dataset_name
     }
 
 

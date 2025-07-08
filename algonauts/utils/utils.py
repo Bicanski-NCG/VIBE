@@ -6,7 +6,8 @@ import torch
 from functools import lru_cache
 from nilearn.datasets import fetch_atlas_schaefer_2018
 from scipy.stats import pearsonr
-
+import os
+from tqdm import tqdm
 
 def voxelwise_pearsonr(y_true: np.ndarray,
                        y_pred: np.ndarray) -> np.ndarray:
@@ -166,3 +167,6 @@ def ensure_paths_exist(*pairs):
         p = Path(p)
         if not p.exists():
             raise FileNotFoundError(f"{pretty} not found: {p}")
+        
+
+

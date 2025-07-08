@@ -39,7 +39,15 @@ def load_features_for_episode(episode_id, feature_paths, normalization_stats=Non
             feat = torch.load(path, map_location="cpu").squeeze().float()
         else:
             raise ValueError(f"Unknown feature file extension: {path}")
-        if normalization_stats and f"{modality}_mean" in normalization_stats:
+
+
+        if normalization_stats and normalization_stats.get(modality) and normalization_stats.get(modality).get("mean"):
+            feat = normalize_feature(
+                feat,
+                normalization_stats[modality]["mean"],
+                normalization_stats[modality]["std"]
+            )
+        elif normalization_stats and f"{modality}_mean" in normalization_stats: #left this in for possible backward compatibility
             feat = normalize_feature(
                 feat,
                 normalization_stats[f"{modality}_mean"],
@@ -202,7 +210,7 @@ def main():
         )
         model.to(device)
         if args.roi_ensemble:
-            # Wrap in ROIAdaptiveEnsemble for per-ROI best epoch
+            # Wrap in ROIAdaptiveEnsemble for per-ROI best iters
             roi_labels = torch.load(checkpoint_dir / "roi_names.pt", weights_only=False)
             roi_to_epoch = torch.load(checkpoint_dir / "roi_to_epoch.pt", weights_only=False)
             model = ROIAdaptiveEnsemble(

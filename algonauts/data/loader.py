@@ -109,7 +109,10 @@ def get_full_loader(config):
         input_dims=config.input_dims,
         modalities=config.modalities,
         noise_std=0.0,   # no noise augmentation during full training
-        normalization_stats=norm_stats if config.use_normalization else None,
+        normalization_stats=norm_stats,
+        modality_dropout_mode = config.modality_dropout_mode,
+        modality_dropout_prob = config.modality_dropout_prob,
+        normalize_features = config.use_normalization
     )
 
     if config.filter_name is not None:

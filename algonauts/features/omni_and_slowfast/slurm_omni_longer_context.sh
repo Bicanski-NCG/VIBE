@@ -13,7 +13,7 @@
 # --- default case: use a single GPU on a shared node ---
 #SBATCH --gres=gpu:a100:2
 #SBATCH --cpus-per-task=12
-#SBATCH --mem=120000
+#SBATCH --mem=240000
 #
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=dixit@cbs.mpg.de

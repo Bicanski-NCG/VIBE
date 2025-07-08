@@ -295,13 +295,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--chunk_length",
         type=int,
-        default=8,
+        default=30,
         help="Total duration of each chunk in seconds",
     )
     parser.add_argument(
         "--seconds_before_chunk",
         type=int,
-        default=6,
+        default=28.5,
         help="Length of video included before the chunk's start time",
     )
 

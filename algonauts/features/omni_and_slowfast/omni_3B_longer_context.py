@@ -264,13 +264,15 @@ def process_video_folder(input_folder: str,
                          window_len: float,
                          stride: float):
     """Walk *input_folder*, process every .mkv and save features."""
-
+    ood_skip_files = ["task-passepartoutS02E08_video.mkv", "task-passepartoutS02E07_video.mkv", "task-chaplin_video.mkv", "task-pulpfiction_video.mkv", "task-mononoke_video.mkv",  "task-planetearth_video.mkv"]
     video_files = []
     for root, _, files in os.walk(input_folder):
         # skip hidden folders (., .., .ipynb_checkpoints, etc.)
         if any(part.startswith('.') for part in root.split(os.sep)):
             continue
         for file in files:
+            if file in ood_skip_files:
+                continue
             if file.endswith(".mkv"):
                 video_files.append((root, file))
 

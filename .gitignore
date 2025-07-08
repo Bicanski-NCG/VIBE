@@ -30,3 +30,8 @@ fmri/
 
 # ignore env script
 env.sh
+*/wandb/*
+*/checkpoints/*
+*/submissions/*
+*.out.*
+*.err.*

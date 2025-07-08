@@ -2,6 +2,7 @@ import argparse
 import os
 from pathlib import Path
 import glob
+import random
 import numpy as np
 import torch
 import zipfile
@@ -24,7 +25,7 @@ def pad_to_length(x, target_len):
 
 def load_features_for_episode(episode_id, feature_paths, normalization_stats=None):
     def find_feature_file(root, name):
-        matches = glob.glob(os.path.join(root, "**", f"*{name}.*"), recursive=True)
+        matches = glob.glob(os.path.join(root, "**", f"*{name}*"), recursive=True)
         if not matches:
             raise FileNotFoundError(f"{name}.npy not found in {root}")
         return matches[0]
@@ -50,7 +51,7 @@ def load_features_for_episode(episode_id, feature_paths, normalization_stats=Non
 
 
 def predict_fmri_for_test_set(
-    model, feature_paths, sample_counts_root, normalization_stats=None, device="cuda"
+    model, feature_paths, sample_counts_root, ood_names, normalization_stats=None, device="cuda"
 ):
     model.eval()
     model.to(device)
@@ -66,19 +67,21 @@ def predict_fmri_for_test_set(
             sample_counts_root,
             subj,
             "target_sample_number",
-            f"{subj}_friends-s7_fmri_samples.npy",
+            f"{subj}_ood_fmri_samples.npy",
         )
         sample_counts = np.load(sample_dict_path, allow_pickle=True).item()
 
-        for episode in sample_counts.keys():
-            print(f"→  Processing {subj} - {episode}", flush=True)
-            n_samples = sample_counts[episode]
+        for clip in sample_counts.keys():
+            if not any([ood in clip for ood in ood_names]):
+                continue
+            print(f"→  Processing {subj} - {clip}", flush=True)
+            n_samples = sample_counts[clip]
             try:
                 features = load_features_for_episode(
-                    episode, feature_paths, normalization_stats
+                    clip, feature_paths, normalization_stats
                 )
             except FileNotFoundError as e:
-                print(f"Skipping {episode}: {e}", flush=True)
+                print(f"Skipping {clip}: {e}", flush=True)
                 continue
 
             for key in features:
@@ -94,105 +97,9 @@ def predict_fmri_for_test_set(
             with torch.no_grad():
                 preds = model(features, subj_ids, [0], attention_mask)
 
-            output_dict[subj][episode] = (
+            output_dict[subj][clip] = (
                 preds.squeeze(0).cpu().numpy().astype(np.float32)
             )
-
-    return output_dict
-
-def predict_fmri_for_season7(
-    model,
-    feature_paths,
-    sample_counts_root,
-    normalization_stats=None,
-    device="cuda",
-):
-    """
-    Predict fMRI responses for all season-7 episodes in one forward pass
-    per subject, returning the same nested dict structure that the
-    submission checker expects:
-
-        { "sub-01": { "s07e01a": np.array, ... }, ... }
-    """
-
-    model.eval()
-    model.to(device)
-
-    subjects           = ["sub-01", "sub-02", "sub-03", "sub-05"]
-    subject_name2idx   = {"sub-01": 0, "sub-02": 1, "sub-03": 2, "sub-05": 3}
-
-    output_dict = {}
-
-    for subj in subjects:
-        print(f"\n→  Processing {subj}", flush=True)
-        output_dict[subj] = {}
-        subj_id_t = torch.tensor([subject_name2idx[subj]], device=device)
-
-        # ---------------------------------------------------------------------
-        # 1) Gather sample counts for every season-7 episode for this subject
-        # ---------------------------------------------------------------------
-        counts_path = os.path.join(
-            sample_counts_root,
-            subj,
-            "target_sample_number",
-            f"{subj}_friends-s7_fmri_samples.npy",
-        )
-        sample_counts = np.load(counts_path, allow_pickle=True).item()
-
-        # Sort keys to ensure chronological order: s07e01a, s07e01b, …
-        # A lexicographic sort is already correct for this naming scheme:
-        episodes = sorted(sample_counts.keys())
-
-        # ---------------------------------------------------------------------
-        # 2) Load & pad every modality for every episode, keep split indices
-        # ---------------------------------------------------------------------
-        concat_feats = {m: [] for m in feature_paths}   # lists of tensors
-        split_lengths = []                               # n_samples per episode
-
-        for epi_name in episodes:
-            n_samples = sample_counts[epi_name]
-
-            try:
-                features = load_features_for_episode(
-                    epi_name, feature_paths, normalization_stats
-                )
-            except FileNotFoundError as e:
-                print(f"  ⚠️  Skipping {epi_name}: {e}")
-                continue
-
-            for m in feature_paths:
-                # pad so every modality matches n_samples for this episode
-                x = pad_to_length(features[m], n_samples)[:n_samples]
-                concat_feats[m].append(x)
-
-            split_lengths.append(n_samples)
-
-        # If we skipped every episode, continue gracefully
-        if not split_lengths:
-            continue
-
-        # ---------------------------------------------------------------------
-        # 3) Concatenate over the *time* dimension -> shape [T_total, feat_dim]
-        # ---------------------------------------------------------------------
-        for m in concat_feats:
-            concat_feats[m] = torch.cat(concat_feats[m], dim=0).unsqueeze(0).to(device)
-
-        total_len = sum(split_lengths)
-
-        attention_mask = torch.ones((1, total_len), dtype=torch.bool, device=device)
-
-        # ---------------------------------------------------------------------
-        # 4) Forward pass & split prediction back into episodes
-        # ---------------------------------------------------------------------
-        with torch.no_grad():
-            preds = model(concat_feats, subj_id_t, attention_mask)      # [1,T,V]
-        preds = preds.squeeze(0).cpu().numpy().astype(np.float32)       # [T,V]
-
-        # Split along time-axis
-        start = 0
-        for epi_name, n in zip(episodes, split_lengths):
-            output_dict[subj][epi_name] = preds[start : start + n]
-            start += n
 
     return output_dict
 
@@ -209,6 +116,8 @@ def main():
                            "(default $OUTPUT_DIR or data/outputs)")
     args.add_argument("--roi_ensemble", action="store_true",
                       help="Use ROIAdaptiveEnsemble to select best models per ROI")
+    args.add_argument("--ood_names", type=str, default=None, nargs="+",
+                      help="Name of OOD dataset for which to make predictions")
     args = args.parse_args()
 
     if args.name is None:
@@ -251,8 +160,8 @@ def main():
 
     # Build model according to --ensemble or single checkpoint, with optional ROI wrap
     device = "cuda"
-    load_device = "cpu" if len(args.ensemble) > 20 else device
     if args.ensemble:
+        load_device = "cpu" if len(args.ensemble) > 25 else device
         # Ensemble averaging over provided run IDs
         checkpoint_names = args.ensemble
         # Load config from the first checkpoint
@@ -278,7 +187,8 @@ def main():
                     model_ckpt_path=str(ckpt_dir / "final_model.pt"),
                     params_path=str(ckpt_dir / "config.yaml"),
                 )
-            m.to(load_device).eval()
+            #m.to(load_device).eval()
+            m.eval()
             models.append(m)
         model = EnsembleAverager(models=models, device=device, normalize=True)
     else:
@@ -303,17 +213,19 @@ def main():
             )
     model.eval()
 
-    feature_paths = {name: Path(config.features_dir) / path for name, path in config.features.items()}
+    feature_paths = {name: Path(config.features_dir) / path for name, path in config.features.items() if name in config.input_dims}
 
     print("Starting predictions for fMRI season 7 episodes...", flush=True)
     predictions = predict_fmri_for_test_set(
         model=model,
         feature_paths=feature_paths,
         sample_counts_root=config.data_dir,
+        ood_names=args.ood_names,
         normalization_stats=None,
         device=device,
     )
-
+    random_number = random.randint(0, 1000)
+    name = f"{name}_{'_'.join(args.ood_names)}_{random_number}"
     output_file = submission_dir / f"{name}.npy"
     np.save(output_file, predictions, allow_pickle=True)
 

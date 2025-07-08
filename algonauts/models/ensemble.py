@@ -1,3 +1,4 @@
+import random
 import torch
 import torch.nn as nn
 import numpy as np
@@ -52,13 +53,13 @@ class EnsembleAverager(nn.Module):
         preds = []
         for model in self.models:
             # Ensure model is on the correct device
-            model.to(self.device)
+            #model.to(self.device)
             pred = model(features, subject_ids, run_ids, attention_mask)
-            pred = self._row_normalise(pred)          # [B, T, V] normalised
+            pred = self._row_normalise(pred).to(self.device)          # [B, T, V] normalised
             preds.append(pred)
-            if len(self.models) > 20:
+            #if len(self.models) > 7:
                 # Send models to CPU to same VRAM
-                model.cpu()
+                #model.cpu()
         stacked = torch.stack(preds, dim=0)  # [N_models, B, T, V]
         return stacked.mean(dim=0)           # [B, T, V]
 
@@ -74,7 +75,8 @@ class ROIAdaptiveEnsemble(nn.Module):
                  ckpt_dir:     Path,
                  device:       str = "cuda"):
         super().__init__()
-        self.device = device
+        self.device = torch.device(f"cuda:{random.randrange(torch.cuda.device_count())}") if torch.cuda.is_available() else torch.device("cpu")
+
 
         # Preload one model per unique epoch in roi_to_epoch
         self.roi_to_epoch = roi_to_epoch
@@ -84,7 +86,7 @@ class ROIAdaptiveEnsemble(nn.Module):
         for e in self.epochs:
             ckpt_path = ckpt_dir / f"epoch_{e}_final_model.pt"
             model, _ = load_model_from_ckpt(str(ckpt_path), ckpt_dir / "config.yaml")
-            model.eval()
+            model = model.to(self.device).eval()
             self.models[e] = model
 
 
@@ -96,6 +98,8 @@ class ROIAdaptiveEnsemble(nn.Module):
         """
         # 1) Run all needed models once:
         preds = {}  # maps epoch → [B,T,V] tensor
+        features = {m: f.to(self.device) for m, f in features.items()}
+        attention_mask = attention_mask.to(self.device)
         for e, m in self.models.items():
             preds[e] = m(features, subject_ids, run_ids, attention_mask)  # [B,T,V]
 

@@ -173,10 +173,13 @@ def process_video_folder(
     center_crop=False
 ):
     video_files = []
+    ood_skip_files = ["task-passepartoutS02E08_video.mkv", "task-passepartoutS02E07_video.mkv", "task-chaplin_video.mkv", "task-pulpfiction_video.mkv", "task-mononoke_video.mkv",  "task-planetearth_video.mkv"]
     for root, _, files in os.walk(input_folder):
         if any(part.startswith(".") for part in root.split(os.sep)):
             continue
         for file in files:
+            if file in ood_skip_files:
+                continue
             if file.endswith(".mkv"):
                 video_files.append((root, file))
 

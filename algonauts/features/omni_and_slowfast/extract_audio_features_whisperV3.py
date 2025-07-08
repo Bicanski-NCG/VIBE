@@ -147,10 +147,11 @@ def process_dataset(inp_root: str,
                     tr: float,
                     window: float,
                     stereo: bool = False):
+    ood_skip_files = ["task-passepartoutS02E08_video.mkv", "task-passepartoutS02E07_video.mkv", "task-chaplin_video.mkv", "task-pulpfiction_video.mkv", "task-mononoke_video.mkv",  "task-planetearth_video.mkv"]
     vids = [os.path.join(r, f)
             for r, _, fs in os.walk(inp_root)
             if not any(p.startswith('.') for p in r.split(os.sep))
-            for f in fs if f.endswith('.mkv')]
+            for f in fs if f.endswith('.mkv') and f not in ood_skip_files]
 
     random.shuffle(vids)
 

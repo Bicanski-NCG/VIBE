@@ -130,7 +130,7 @@ class FMRI_Dataset(Dataset):
                             "has_multiple_runs": has_multiple_runs
                         }
                         self.samples.append(sample)
-
+        self.loss_masks_path = loss_masks_path
         if loss_masks_path:
             self.loss_masks = torch.load(loss_masks_path)
             #should be a dictionary with (subject_id,dataset_name)
@@ -197,7 +197,7 @@ class FMRI_Dataset(Dataset):
 
         if loss_mask is None:
             loss_mask = torch.ones_like(fmri_file)
-
+       
         return loss_mask
 
     def __getitem__(self, idx):
@@ -338,8 +338,8 @@ def split_dataset_by_name(dataset, val_name="06", val_run="all",
         normalize_bold=dataset.normalize_bold,
         modality_dropout_mode = dataset.modality_dropout_mode,
         modality_dropout_prob =  dataset.modality_dropout_prob,
-        normalize_features = dataset.normalize_features
-        
+        normalize_features = dataset.normalize_features,
+        loss_masks_path=dataset.loss_masks_path
     )
 
     val_ds = FMRI_Dataset(
@@ -352,7 +352,8 @@ def split_dataset_by_name(dataset, val_name="06", val_run="all",
         normalize_bold=normalize_validation_bold,
         modality_dropout_mode = dataset.modality_dropout_mode,
         modality_dropout_prob =  0.0, #no dropout in validation set
-        normalize_features = dataset.normalize_features
+        normalize_features = dataset.normalize_features,
+        loss_masks_path=dataset.loss_masks_path
     )
 
     return train_ds, val_ds

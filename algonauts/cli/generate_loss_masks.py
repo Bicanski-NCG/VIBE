@@ -16,7 +16,6 @@ from tqdm import  tqdm
 def generate_loss_masks(model,
                         config,
                         mask_filter='life',
-                        output_dir = '.',
                         mask_generation_function = None):
 
 
@@ -45,7 +44,6 @@ def generate_loss_masks(model,
     filter_fn = lambda sample: sample["name"] in mask_filter
     dataset = dataset.filter_samples(filter_fn)
 
-    save_path = os.path.join(output_dir,'loss_masks.pt')
 
     loss_masks = {}
 
@@ -59,12 +57,10 @@ def generate_loss_masks(model,
             preds = model(features, subj_ids, [0], attention_mask)
 
         mask = mask_generation_function(preds[0],fmri_response_tensor)
-
         
         loss_masks[(subject_id,dataset_name)] = mask
 
 
-    torch.save(loss_masks,save_path)
 
     return loss_masks
 
@@ -74,10 +70,25 @@ def generate_correlation_mask(pred,true,
                               smooth = False,
                               smooth_window  = 100,
                               mode = 'absolute',
-                              cutoff = 0.15):
+                              cutoff = 0.15,
+                              use_top_k_voxels = False):
     
     pred = pred.detach().cpu()
     true = true.detach().cpu()
+
+    out_dim = int(true.shape[-1])
+    if use_top_k_voxels:
+        
+        k = 15
+
+        corrs = np.array([pearsonr(true[:,v], pred[:,v])[0] for v in range(true.shape[1])])
+
+        sorted = np.argsort(corrs)
+
+        pred = pred[:,sorted[-k:]]
+        true = true[:,sorted[-k:]]
+
+
     r_t = np.array([pearsonr(true[t], pred[t])[0] for t in range(true.shape[0])])
 
     if smooth: 
@@ -98,6 +109,8 @@ def generate_correlation_mask(pred,true,
 
     mask = torch.tensor(r_t).float()
 
+    mask = mask.unsqueeze(1).expand(-1,out_dim)
+
     return mask
 
 
@@ -116,27 +129,28 @@ def main():
                       help="Root directory for outputs & checkpoints "
                            "(default $OUTPUT_DIR or data/outputs)")
 
-    
-    args.add_argument("--save_loss_masks_at",type = str,default='.')
-
-
     # Arguments to modify how loss function is generated
-    args.add_argument("--use_pearson_r_mask",type = bool,default=True)
+    args.add_argument("--use_mask",type = str,default='pearsonr')
     args.add_argument("--smooth",type = bool,default=False)
     args.add_argument("--smooth_window",type = int,default=100)
     args.add_argument("--cutoff_mode",type = str,default='absolute', help = 'Determines whether cutoff is an absolute value or a relative value')
     args.add_argument("--cutoff",type = float, default = 0.15)
-    
+    args.add_argument("--use_top_k", action='store_true', default=False,
+                   help="Set to False to not use top-k masking")
 
 
     args = args.parse_args()
 
-    if args.use_pearson_r_mask == False:
-        raise NotImplementedError
-    
-    else:
-        mask_generation_function = lambda pred,true: generate_correlation_mask(pred,true,args.smooth,args.smooth_window,args.cutoff_mode,args.cutoff)
 
+    if args.use_mask == 'pearsonr':
+        mask_generation_function = lambda pred,true: generate_correlation_mask(pred,true,
+                                                                               smooth=args.smooth,
+                                                                               smooth_window=args.smooth_window,
+                                                                               mode=args.cutoff_mode,
+                                                                               cutoff=args.cutoff,
+                                                                               use_top_k_voxels=args.use_top_k)
+    else:
+        raise NotImplementedError
 
     if not args.checkpoint and not args.ensemble:
         raise ValueError("Please provide a checkpoint to load or an ensemble list.")
@@ -147,7 +161,11 @@ def main():
     else:
         print(f"Using ensemble checkpoints: {args.ensemble}", flush=True)
 
-    output_root = Path(args.output_dir or os.getenv("OUTPUT_DIR", "data/outputs"))
+
+
+
+    output_root =  Path(os.getenv("OUTPUT_DIR", "data/outputs"))
+
 
     submission_dir = os.path.join(output_root, "submissions")
     checkpoint_dir = os.path.join(output_root, "checkpoints", args.checkpoint) if args.checkpoint else None
@@ -184,18 +202,18 @@ def main():
         models = []
         for chk in checkpoint_names:
             print(f"Loading model from checkpoint: {chk}", flush=True)
-            ckpt_dir = output_root / "checkpoints" / chk
+            checkpoint_dir = output_root / "checkpoints" / chk
             if args.roi_ensemble:
                 m = ROIAdaptiveEnsemble(
-                    roi_labels=torch.load(ckpt_dir / "roi_names.pt", weights_only=False),
-                    roi_to_epoch=torch.load(ckpt_dir / "roi_to_epoch.pt", weights_only=False),
-                    ckpt_dir=ckpt_dir,
+                    roi_labels=torch.load(checkpoint_dir / "roi_names.pt", weights_only=False),
+                    roi_to_epoch=torch.load(checkpoint_dir / "roi_to_epoch.pt", weights_only=False),
+                    ckpt_dir=checkpoint_dir,
                     device=load_device,
                 )
             else:
                 m, _ = load_model_from_ckpt(
-                    model_ckpt_path=str(ckpt_dir / "final_model.pt"),
-                    params_path=str(ckpt_dir / "config.yaml"),
+                    model_ckpt_path=str(checkpoint_dir / "final_model.pt"),
+                    params_path=str(checkpoint_dir / "config.yaml"),
                 )
             #m.to(load_device).eval()
             m.eval()
@@ -223,11 +241,16 @@ def main():
             )
     model.eval()
 
-    masks = generate_loss_masks(model,config,
+    masks = generate_loss_masks(model,
+                                config,
                                 mask_filter = args.mask_filter,
-                                output_dir=args.save_loss_masks_at,
                                 mask_generation_function= mask_generation_function)
-
+    if args.output_dir is None:
+        output_dir = checkpoint_dir
+    else:
+        output_dir = args.output_dir
+    save_path = os.path.join(output_dir,'loss_masks.pt')
+    torch.save(masks,save_path)
 
 if __name__ == "__main__":
     main()

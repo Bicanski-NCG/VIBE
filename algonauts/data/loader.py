@@ -26,7 +26,8 @@ def get_train_val_loaders(config):
                       oversample_factor=config.oversample_factor,
                       modality_dropout_mode = config.modality_dropout_mode,
                       modality_dropout_prob = config.modality_dropout_prob,
-                      normalize_features = config.use_normalization
+                      normalize_features = config.use_normalization,
+                      loss_masks_path=config.loss_masks_path,
                       
                       )
 
@@ -112,7 +113,8 @@ def get_full_loader(config):
         normalization_stats=norm_stats,
         modality_dropout_mode = config.modality_dropout_mode,
         modality_dropout_prob = config.modality_dropout_prob,
-        normalize_features = config.use_normalization
+        normalize_features = config.use_normalization,
+        loss_masks_path=config.loss_masks_path
     )
 
     if config.filter_name is not None:

@@ -103,10 +103,10 @@ def extract_tsv_features(
         )
     elif 'movie10' in tsv_path.lower():
         movie_dict = {
-            "movie10_bourne":  "The Bourne Supremacy (~100 min, 10 parts)",
-            "movie10_figures": "Hidden Figures (~120 min, 12 parts)",
-            "movie10_life":    "Life (Attenborough, disc 1, ~50 min, 5 parts)",
-            "movie10_wolf":    "The Wolf of Wall Street (~170 min, 16 parts)",
+            "movie10_bourne":  "The Bourne Supremacy (~100 min, 10 parties)",
+            "movie10_figures": "Hidden Figures (~120 min, 12 parties)",
+            "movie10_life":    "Life (Attenborough, disque 1, ~50 min, 5 parties)",
+            "movie10_wolf":    "The Wolf of Wall Street (~170 min, 16 parties)",
         }
         key = fname[:-6]               # strip '_?.tsv'
         part_no = fname[-5]
@@ -116,10 +116,10 @@ def extract_tsv_features(
         )
     elif 'ood' in tsv_path.lower():
 
-        movie_dict = {'ood_mononoke': "Princess Mononoke (~133 min, 13 parts)",
-                      'ood_planetearth': "Planet Earth (Season II, Episode I, ""Mountains"") (~48 mins, 4 parts)",
-                      'ood_pulpfiction': "Pulp Fiction: (~153 min, 15 parts)",
-                      'ood_wot': "World of Tomorrow by Don Herzfeldt (Animated Short Film, ~16 min, 2 parts)"}
+        movie_dict = {'ood_mononoke': "Princess Mononoke (~133 min, 13 parties)",
+                      'ood_planetearth': "Planet Earth (Saison II, Épisode I, « Mountains ») (~48 min, 4 parties)",
+                      'ood_pulpfiction': "Pulp Fiction (~153 min, 15 parties)",
+                      'ood_wot': "World of Tomorrow de Don Herzfeldt (court métrage d’animation, ~16 min, 2 parties)"}
         
         key = fname[:-6]               # strip '_?.tsv'
         part_no = fname[-5]

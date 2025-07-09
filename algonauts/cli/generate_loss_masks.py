@@ -249,6 +249,7 @@ def main():
         output_dir = checkpoint_dir
     else:
         output_dir = args.output_dir
+    
     save_path = os.path.join(output_dir,'loss_masks.pt')
     torch.save(masks,save_path)
 

@@ -189,9 +189,11 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                 np.concatenate(fmri_pred, axis=0),
             )
             labels = np.array(group_masker.labels[1:])
+            roi_scores = {}
             roi_idxs = {roi: np.argwhere(labels == roi) for roi in labels} # 1: skip background
             for roi_name, roi_idx in roi_idxs.items():
                 roi_r = np.mean(voxelwise_r[roi_idx])
+                roi_scores[roi_name] = roi_r
 
                 # Track best validation scores per ROI
                 if roi_name not in roi_to_scores or roi_r > roi_to_scores[roi_name]:
@@ -199,7 +201,7 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                     roi_to_epoch[roi_name] = epoch
                     logger.info(f"🏆 New best {roi_name} at epoch {epoch}: {roi_r:.4f}")
 
-            wandb.log({"val/roi_scores": roi_to_scores}, commit=False)
+            wandb.log({"val/roi_scores": roi_scores}, commit=False)
 
             # If any ROI has best validation score this epoch, save the model
             if epoch in roi_to_epoch.values():

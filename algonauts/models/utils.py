@@ -78,6 +78,7 @@ def build_model(config):
         proj_layers=config.proj_layers,
         fuse_mode=config.fuse_mode,
         subject_count=config.subject_count,
+        use_gmu=config.use_gmu,
         # temporal predictor hyper-params
         pred_layers=config.pred_layers,
         pred_heads=config.pred_heads,

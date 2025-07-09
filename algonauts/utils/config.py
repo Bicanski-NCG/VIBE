@@ -44,6 +44,7 @@ class Config:
     proj_layers: int = 1
     fuse_mode: str = "concat"
     subject_count: int = 4
+    use_gmu: bool = False 
 
     # ─── Prediction Transformer ───
     pred_layers: int = 3

@@ -6,6 +6,31 @@ from scipy.stats import gamma
 from algonauts.models.rope import PredictionTransformerRoPE
 
 
+# ──────────────────────────────────────────────────────────────
+# Gated‑Multimodal Unit – scalar gate per modality per time‑step
+# ──────────────────────────────────────────────────────────────
+class GMU(nn.Module):
+    """
+    Re‑weights each modality using a learned scalar gate g∈(0,1).
+    All modality tensors must share the same hidden_dim.
+    """
+    def __init__(self, modalities, hidden_dim: int):
+        super().__init__()
+        self.modalities = modalities
+        self.gate = nn.ModuleDict({
+            m: nn.Linear(hidden_dim, 1, bias=True)   # σ(wᵀh+b)
+            for m in modalities
+        })
+
+    def forward(self, proj_dict):
+        # proj_dict[m]: (B, T, D)
+        gated = {}
+        for m, h in proj_dict.items():
+            g = torch.sigmoid(self.gate[m](h))       # (B,T,1)
+            gated[m] = h * g                         # element‑wise
+        return gated
+
+
 def spm_hrf(tr: float, size: int):
     length = tr * size
     t = np.arange(0, length, tr)
@@ -29,7 +54,8 @@ class ModalityFusionTransformer(nn.Module):
         fuse_mode: str = "concat",
         use_transformer: bool = True,
         use_run_embeddings: bool = False,
-        num_layers_projection: int = 1
+        num_layers_projection: int = 1,
+        use_gmu: bool = False
     ):
         super().__init__()
         self.fuse_mode = fuse_mode
@@ -37,6 +63,10 @@ class ModalityFusionTransformer(nn.Module):
             modality: self.build_projection(dim, hidden_dim, num_layers_projection)
             for modality, dim in input_dims.items()
         })
+
+        self.use_gmu = use_gmu
+        if self.use_gmu:
+            self.gmu = GMU(list(input_dims.keys()), hidden_dim)
 
         self.subject_dropout_prob = subject_dropout_prob
         self.subject_embeddings = nn.Embedding(subject_count + 1, hidden_dim)
@@ -73,7 +103,14 @@ class ModalityFusionTransformer(nn.Module):
     def forward(self, inputs: dict, subject_ids, run_ids):
         B, T, _ = next(iter(inputs.values())).shape
 
-        projected = [self.projections[name](inputs[name]) for name in self.projections]
+        projected_dict = {
+            name: self.projections[name](inputs[name])
+            for name in self.projections
+        }
+        if self.use_gmu:
+            projected_dict = self.gmu(projected_dict)
+
+        projected = [projected_dict[name] for name in self.projections]
         x = torch.stack(projected, dim=2)  # (B, T, num_modalities, D)
 
         subject_ids = torch.tensor(subject_ids, device=x.device, dtype=torch.long)
@@ -214,10 +251,11 @@ class FMRIModel(nn.Module):
         hrf_size=8,
         tr_sec=1.49,
         # padding
-        num_pre_tokens: int = 5,
+        num_pre_tokens: int = 0,
         n_prepend_zeros=10,
         # training
         mask_prob=0.2,
+        use_gmu: bool = False,
     ):
         """
         FMRIModel combines modality fusion and temporal prediction.
@@ -257,6 +295,7 @@ class FMRIModel(nn.Module):
             use_transformer=use_fusion_transformer,
             use_run_embeddings=use_run_embeddings,
             num_layers_projection=proj_layers,
+            use_gmu=use_gmu,
         )
 
         fused_dim = (

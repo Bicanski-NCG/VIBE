@@ -103,6 +103,7 @@ use_fusion_transformer: true
 use_run_embeddings: false
 proj_layers: 1
 subject_count: 4
+use_gmu: false
 
 # Prediction transformer hyperparameters
 pred_layers: 2

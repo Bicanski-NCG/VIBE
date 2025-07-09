@@ -23,7 +23,8 @@ class FMRI_Dataset(Dataset):
         normalize_bold=False,
         modality_dropout_mode = 'zeros',
         modality_dropout_prob = 0.1,
-        normalize_features = False
+        normalize_features = False,
+        loss_masks_path=None # None or paths
     ):
         super().__init__()
 
@@ -129,7 +130,12 @@ class FMRI_Dataset(Dataset):
                             "has_multiple_runs": has_multiple_runs
                         }
                         self.samples.append(sample)
-
+        self.loss_masks_path = loss_masks_path
+        if loss_masks_path:
+            self.loss_masks = torch.load(loss_masks_path)
+            #should be a dictionary with (subject_id,dataset_name)
+        else:
+            self.loss_masks = None
     def __len__(self):
         return len(self.samples)
 
@@ -181,6 +187,18 @@ class FMRI_Dataset(Dataset):
                 raise ValueError(f"Corrupted feature file: {path}")
         else:
             raise ValueError(f"Unknown feature file extension: {path}")
+    
+    def get_loss_mask(self,dataset_name,subject_id,fmri_file):
+        if self.loss_masks:
+
+            loss_mask = self.loss_masks.get((subject_id,dataset_name),None)
+        else:
+            loss_mask =None
+
+        if loss_mask is None:
+            loss_mask = torch.ones_like(fmri_file)
+       
+        return loss_mask
 
     def __getitem__(self, idx):
         sample_info = self.samples[idx]
@@ -254,7 +272,9 @@ class FMRI_Dataset(Dataset):
             features[key] = features[key][:min_samples]
         fmri_response_tensor = fmri_response_tensor[:min_samples]
 
-        return subject_id, run_id, features, fmri_response_tensor
+        loss_mask = self.get_loss_mask(dataset_name,subject_id,fmri_response_tensor)
+
+        return subject_id, run_id, features, fmri_response_tensor,loss_mask, dataset_name
 
 
 def compute_mean_std(dataset):
@@ -318,8 +338,8 @@ def split_dataset_by_name(dataset, val_name="06", val_run="all",
         normalize_bold=dataset.normalize_bold,
         modality_dropout_mode = dataset.modality_dropout_mode,
         modality_dropout_prob =  dataset.modality_dropout_prob,
-        normalize_features = dataset.normalize_features
-        
+        normalize_features = dataset.normalize_features,
+        loss_masks_path=dataset.loss_masks_path
     )
 
     val_ds = FMRI_Dataset(
@@ -332,14 +352,15 @@ def split_dataset_by_name(dataset, val_name="06", val_run="all",
         normalize_bold=normalize_validation_bold,
         modality_dropout_mode = dataset.modality_dropout_mode,
         modality_dropout_prob =  0.0, #no dropout in validation set
-        normalize_features = dataset.normalize_features
+        normalize_features = dataset.normalize_features,
+        loss_masks_path=dataset.loss_masks_path
     )
 
     return train_ds, val_ds
 
 
 def collate_fn(batch):
-    subject_ids, run_ids, features_list, fmri_responses = zip(*batch)
+    subject_ids, run_ids, features_list, fmri_responses,loss_mask,dataset_name = zip(*batch)
 
     all_modalities = features_list[0].keys()
     padded_features = {
@@ -350,6 +371,8 @@ def collate_fn(batch):
     }
 
     fmri_padded = pad_sequence(fmri_responses, batch_first=True, padding_value=0)
+
+    loss_mask_padded = pad_sequence(loss_mask, batch_first=True, padding_value=0)
 
     # Example attention mask (you can adapt this per modality if needed)
     seq_lengths = [next(iter(f.values())).shape[0] for f in features_list]
@@ -363,6 +386,8 @@ def collate_fn(batch):
         **padded_features,
         "fmri": fmri_padded,
         "attention_masks": attention_masks,
+        "loss_mask":loss_mask_padded,
+        "dataset_names":dataset_name
     }
 
 

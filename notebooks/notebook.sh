@@ -5,7 +5,7 @@
 # Initial working directory:
 #SBATCH -D /u/danielcs/algonauts/Algonauts-Decoding
 # Job name
-#SBATCH -J algonauts-train
+#SBATCH -J algonauts-notebook
 #
 #SBATCH --ntasks=1
 #
@@ -15,8 +15,8 @@
 #SBATCH --ntasks-per-core=2
 #SBATCH --mem=125000M
 #
-#SBATCH --time=04:30:00
+#SBATCH --time=00:30:00
 
 . scripts/env.sh
 
-uv run algonauts-train "$@"
+jupyter notebook --no-browser --ip="*" --port=9779 --NotebookApp.token=letmepass --notebook-dir="./tests"

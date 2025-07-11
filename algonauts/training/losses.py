@@ -27,7 +27,79 @@ def masked_negative_pearson_loss(pred, target, mask, eps=1e-8, zero_center=True,
     corr = numerator / (denominator + eps)
     return -corr.mean()
 
+import torch
 
+def masked_covariance_matrix(data, mask, zero_center=True, eps=1e-8):
+    if mask.ndim < data.ndim:
+        mask = mask.unsqueeze(-1)
+
+    data_masked = data * mask
+    
+    if zero_center:
+        data_mean = data_masked.sum(dim=1, keepdim=True) / (mask.sum(dim=1, keepdim=True) + eps)
+        data_centered = data_masked - data_mean
+    else:
+        data_centered = data_masked
+
+    data_centered_masked = data_centered * mask
+    sum_outer_products = torch.matmul(data_centered_masked.transpose(1, 2), data_centered_masked)
+    
+    return sum_outer_products
+
+def masked_negative_rv_loss(pred, target, mask, eps=1e-8, zero_center=True, network_mask=None):
+    # This block ensures the mask has the correct number of dimensions for broadcasting
+    # with pred/target's feature dimension, similar to how Pearson does it.
+    if mask.ndim < pred.ndim:
+        mask = mask.unsqueeze(-1) # Add a dimension if mask is (batch_size, time_steps)
+                                  # and data is (batch_size, time_steps, features)
+
+    if network_mask is not None:
+        pred = pred[..., network_mask]
+        target = target[..., network_mask]
+        
+        # Apply network_mask to the mask itself to match the new 'pred' and 'target' shape
+        # Since 'mask' has now been potentially unsqueezed, this is robust.
+        mask_for_stats = mask[..., network_mask] 
+    else:
+        mask_for_stats = mask
+
+    # Now, pred, target, and mask_for_stats should have compatible shapes
+    # (batch, time_steps, features) and (batch, time_steps, 1) or (batch, time_steps, features)
+    
+    Sx_pred = masked_covariance_matrix(pred, mask_for_stats, zero_center, eps)
+    Sy_target = masked_covariance_matrix(target, mask_for_stats, zero_center, eps)
+
+    pred_masked = pred * mask_for_stats # This multiplication should now work
+    target_masked = target * mask_for_stats
+    # ... rest of your loss function
+    if zero_center:
+        pred_mean = pred_masked.sum(dim=1, keepdim=True) / (mask_for_stats.sum(dim=1, keepdim=True) + eps)
+        target_mean = target_masked.sum(dim=1, keepdim=True) / (mask_for_stats.sum(dim=1, keepdim=True) + eps)
+        pred_centered = pred_masked - pred_mean
+        target_centered = target_masked - target_mean
+    else:
+        pred_centered = pred_masked
+        target_centered = target_masked
+
+    pred_centered_masked = pred_centered * mask_for_stats
+    target_centered_masked = target_centered * mask_for_stats
+
+    Sxy = torch.matmul(pred_centered_masked.transpose(1, 2), target_centered_masked)
+    Syx = Sxy.transpose(1, 2)
+
+    numerator = torch.einsum('bii->b', torch.matmul(Sxy, Syx))
+
+    denominator_part_x = torch.einsum('bii->b', torch.matmul(Sx_pred, Sx_pred))
+    denominator_part_y = torch.einsum('bii->b', torch.matmul(Sy_target, Sy_target))
+    
+    denominator = torch.sqrt(denominator_part_x * denominator_part_y + eps)
+
+    # Handle cases where denominator might be zero due to no variance or all masked
+    # If denominator is near zero, RV is undefined or approaches zero.
+    # In such cases, we want the loss to indicate poor correlation, e.g., -0.
+    rv_coefficient = torch.where(denominator < eps, torch.tensor(0.0, device=pred.device), numerator / (denominator + eps))
+
+    return -rv_coefficient.mean()
 # ------------------------------------------------------------------
 # helpers
 # ------------------------------------------------------------------

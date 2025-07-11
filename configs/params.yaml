@@ -7,13 +7,13 @@
 # ------------- Training -------------
 
 # Max epochs
-epochs: 15
+epochs: 100
 
 # Batch size
 batch_size: 4
 
 # Learning rate
-lr: 0.0001
+lr: 0.00005
 
 # Number of warmup epochs
 warmup_epochs: 0
@@ -25,21 +25,21 @@ warmup_start_lr_factor: 0.1
 weight_decay: 0.0001
 
 # Epochs patience
-early_stop_patience: 1
+early_stop_patience: 7
 
 # Loss weights
 lambda_sample: 0
 lambda_roi: 0
 lambda_mse: 0.03
-lambda_net_adj: 0.0001
-lambda_sp_adj: 0.00001
+lambda_net_adj: 0.0000
+lambda_sp_adj: 0.00000
 
 # Spatial regularizer
 normalize_pred_for_spatial_regularizer: true
 spatial_sigma: 0.05
 
 # L2 regularization of HRF kernel towards canonical SPM form (does not contribute to loss)
-lambda_hrf: 0.001
+lambda_hrf: 0.000
 
 # Log roi correlations every N epochs. Set to 0 to disable ROI logging
 roi_log_interval: 1
@@ -76,9 +76,9 @@ val_name: "s06"
 val_run: "all"
 
 # Filter dataset of samples with label e.g. to filter out samples with name "life" or "hidden" use ["life", "figures"]
-filter_name:  [ "figures","life03","life04","life05"]
+filter_name:  ["figures","life"] # ["figures", "life03", "life04", "life05"]
 
-loss_masks_path: null # "./loss_masks.pt" 
+loss_masks_path: null # "/u/janik/algonauts/Algonauts-Decoding/median_loss_masks.pt"
 
 # Performance settings
 num_workers: 8
@@ -105,6 +105,7 @@ use_fusion_transformer: true
 use_run_embeddings: false
 proj_layers: 1
 subject_count: 4
+#use_gmu: false
 
 # Prediction transformer hyperparameters
 pred_layers: 2

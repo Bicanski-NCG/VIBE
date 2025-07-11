@@ -6,6 +6,22 @@ import torch
 
 from algonauts.utils import get_atlas
 
+def get_all_network_masks(n_rois: int = 1000):
+    """
+    Return a dict {network_name: boolean_mask (len=n_rois)} for all networks in the atlas.
+    """
+    atlas = get_atlas(n_rois)
+    
+    # Extract network names from the labels
+    # Example label format: '7Networks_LH_Vis_1'
+    # We want 'Vis'
+    networks = np.array([lbl.decode("utf-8").split("_")[2] for lbl in atlas["labels"]])
+    
+    # Get all unique network names
+    all_unique_network_names = np.unique(networks)
+    
+    # Create the dictionary of masks for all networks
+    return {name: networks == name for name in all_unique_network_names}
 def get_network_masks(network_names, n_rois: int = 1000):
     """
     Return a dict {network_name: boolean_mask (len=n_rois)}.

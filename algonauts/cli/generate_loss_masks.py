@@ -164,8 +164,8 @@ def main():
 
 
 
-    output_root =  Path(os.getenv("OUTPUT_DIR", "data/outputs"))
-
+    output_root =  Path(args.output_dir or os.getenv("OUTPUT_DIR", "data/outputs"))
+    print(output_root)
 
     submission_dir = os.path.join(output_root, "submissions")
     checkpoint_dir = os.path.join(output_root, "checkpoints", args.checkpoint) if args.checkpoint else None
@@ -245,12 +245,11 @@ def main():
                                 config,
                                 mask_filter = args.mask_filter,
                                 mask_generation_function= mask_generation_function)
-    if args.output_dir is None:
-        output_dir = checkpoint_dir
-    else:
-        output_dir = args.output_dir
-    
-    save_path = os.path.join(output_dir,'loss_masks.pt')
+    #if args.output_dir is None:
+    #    output_dir = checkpoint_dir
+    #else:
+     #   output_dir = args.output_dir
+    save_path = os.path.join(checkpoint_dir,'loss_masks.pt')
     torch.save(masks,save_path)
 
 if __name__ == "__main__":

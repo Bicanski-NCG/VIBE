@@ -9,14 +9,112 @@ from algonauts.training.losses import (
     masked_negative_pearson_loss,
     sample_similarity_loss,
     roi_similarity_loss,
-    spatial_regularizer_loss,
+    spatial_regularizer_loss,masked_negative_rv_loss
 )
-from algonauts.utils.adjacency_matrices import get_laplacians
+from algonauts.utils.adjacency_matrices import get_laplacians,get_all_network_masks
 from algonauts.utils.viz import load_and_label_atlas, roi_table, voxelwise_pearsonr
 from algonauts.utils import collect_predictions
 
+network_masks  = get_all_network_masks()
 
-def run_epoch(loader, model, optimizer, device, is_train, laplacians, config):
+network_schedule = {
+1: network_masks['Vis'],
+2: network_masks['Vis'],
+
+4: network_masks['SomMot'],
+5: network_masks['SomMot'],
+7: network_masks['Vis'],
+8: network_masks['SomMot'],
+
+9: network_masks['SalVentAttn'],
+10: network_masks['DorsAttn'],
+11: network_masks['Cont'],
+12: network_masks['Default'],
+
+13: network_masks['Limbic'],
+14: network_masks['Vis'] + network_masks['SomMot'],
+15: network_masks['SomMot']+ network_masks['SalVentAttn'],
+16: network_masks['SalVentAttn'] + network_masks['DorsAttn'],
+17:  network_masks['DorsAttn'] + network_masks['Cont'],
+18: network_masks['Default'],
+
+20: network_masks['Cont'] + network_masks['Limbic'],
+21: network_masks['Cont'] + network_masks['Limbic'],
+22: network_masks['Cont'] + network_masks['Limbic'],
+23: network_masks['Vis'] + network_masks['Cont'] ,
+24: network_masks['SomMot'] + network_masks['Limbic'],
+26: network_masks['SalVentAttn'] + network_masks['DorsAttn'],
+27: network_masks['Vis'],
+28: network_masks['SomMot'],
+
+30: network_masks['Vis'],
+31: network_masks['SomMot'],
+
+33: network_masks['SalVentAttn'],
+34: network_masks['DorsAttn'],
+35: network_masks['Cont'],
+36: network_masks['Vis'] + network_masks['Cont'] ,
+
+38: network_masks['Default'],
+39: network_masks['Limbic'],
+40: network_masks['Cont'],
+41: network_masks['Vis'],
+42: network_masks['SomMot']+ network_masks['Limbic'],
+
+43: network_masks['Vis'],
+44: network_masks['SomMot'],
+
+46: network_masks['SalVentAttn'],
+46: network_masks['DorsAttn'],
+48: network_masks['Cont'],
+49: network_masks['Default']+network_masks['SalVentAttn'],
+50: network_masks['Limbic'],
+51: network_masks['Cont'],
+
+}
+stupid = {
+1: network_masks['Vis'],
+2: network_masks['SomMot'],
+
+3: network_masks['Vis'],
+4: network_masks['SomMot'],
+15: network_masks['Cont'] + network_masks['Limbic'],
+
+5: network_masks['SalVentAttn'],
+8: network_masks['Default'],
+10: network_masks['Vis'] + network_masks['Cont'],
+
+6: network_masks['DorsAttn'],
+9: network_masks['Limbic'],
+10: network_masks['Vis'] + network_masks['SomMot'],
+12: network_masks['SalVentAttn'] + network_masks['DorsAttn'] +  network_masks['Vis'],
+
+12: network_masks['SalVentAttn'] + network_masks['Limbic'] +  network_masks['SomMot'],
+
+12: network_masks['Cont'] + network_masks['Limbic'] +  network_masks['Default'],
+3: network_masks['Vis'],
+4: network_masks['SomMot'],
+
+
+7: network_masks['Cont'],
+8: network_masks['Default'],
+
+10: network_masks['Vis'] + network_masks['SomMot'],
+11: network_masks['SomMot']+ network_masks['SalVentAttn'],
+12: network_masks['SalVentAttn'] + network_masks['DorsAttn'],
+13:  network_masks['DorsAttn'] + network_masks['Cont'],
+14: network_masks['Default'],
+
+15: network_masks['Cont'] + network_masks['Limbic'],
+16: network_masks['Cont'] + network_masks['Limbic'],
+17: network_masks['Cont'] + network_masks['Limbic'],
+18: network_masks['Vis'] + network_masks['Cont'] ,
+19: network_masks['SomMot'] + network_masks['Limbic'],
+20: network_masks['SalVentAttn'] + network_masks['DorsAttn'],
+}
+
+
+def run_epoch(loader, model, optimizer, device, is_train, laplacians, config,network_mask = None):
     """Run one training or validation epoch and return loss components."""
     if is_train:
         logger.info("📈 Training...")
@@ -53,9 +151,20 @@ def run_epoch(loader, model, optimizer, device, is_train, laplacians, config):
             pred = model(features, subject_ids, run_ids,attn_mask)
             # pred (B,T,V)
             # fmri (B,T,V)
-            pred = pred*loss_mask
-            fmri = fmri*loss_mask
-            negative_corr_loss = masked_negative_pearson_loss(pred, fmri, attn_mask)
+            
+            if is_train:
+                
+                #network_mask = np.ones(1000)
+                #for network,network_ids in network_masks.items():
+
+                   # if float(torch.rand(1)) < 0.15:
+                   #     network_mask -= network_ids
+
+               #     pred = pred
+               #     fmri = fmri
+                negative_corr_loss = masked_negative_pearson_loss(pred, fmri, attn_mask,network_mask = network_mask)
+            else:
+                negative_corr_loss = masked_negative_pearson_loss(pred, fmri, attn_mask)  #& loss_mask
             sample_loss = sample_similarity_loss(pred, fmri, attn_mask)
             roi_loss = roi_similarity_loss(pred, fmri, attn_mask)
             if config.normalize_pred_for_spatial_regularizer:
@@ -65,7 +174,7 @@ def run_epoch(loader, model, optimizer, device, is_train, laplacians, config):
 
             spatial_adjacency_loss = spatial_regularizer_loss(normalized_pred,spatial_laplacian)
             network_adjacency_loss = spatial_regularizer_loss(normalized_pred,network_laplacian)
-            mse_loss = nn.functional.mse_loss(pred, fmri)
+            mse_loss = nn.functional.mse_loss(pred[...,network_mask], fmri[...,network_mask])
             loss = (
                 negative_corr_loss
                 + config.lambda_sample * sample_loss
@@ -135,8 +244,9 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
     # Track ROI validation correlations
     roi_to_scores = {}
     roi_to_epoch = {}
-   
     for epoch in range(1, config.epochs + 1):
+        network_mask = network_schedule.get(epoch,None)
+
         with logger.step(f"🚀 Epoch {epoch}/{config.epochs} …"):
             *train_losses, _, _ = run_epoch(
                 train_loader,
@@ -146,6 +256,7 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                 is_train=True,
                 laplacians=laplacians,
                 config=config,
+                network_mask = network_mask
             )
             *val_losses, fmri_pred, fmri_true = run_epoch(
                 valid_loader,
@@ -173,7 +284,7 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                     "val/sample": val_losses[2],
                     "val/roi": val_losses[3],
                     "val/mse": val_losses[4],
-
+                    "val/best_val_loss":best_val_loss,
                     # shared LR
                     "train/lr": optimizer.param_groups[0]["lr"]
                         if len(optimizer.param_groups) == 1

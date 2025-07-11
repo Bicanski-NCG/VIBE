@@ -132,7 +132,6 @@ def main():
         name = "submission"
     else:
         name = args.name
-
     # Attach checkpoint or ensemble name to the submission name
     if args.checkpoint:
         name = f"{name}_{args.checkpoint}"

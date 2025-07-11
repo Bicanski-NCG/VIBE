@@ -142,12 +142,13 @@ def extract_tsv_features(
 
     
     emotional_priming_phrase = (
-        "[Instruction]: audience empathy expert, thoroughly examine the emotional state "
-        "of the characters and the overall emotional atmosphere of the following scene. "
-        "consider and encode the predominant emotions this particular moment is crafted to elicit  "
-        "e.g., joy, sadness, tension, surprise, fear, anger, relief, boredom, wonder, etc.). "
-        "Pay attention to emotional transitions and intensity. "
-    )
+    """[Instruction]: As a highly skilled film and psychological analyst, your task is to thoroughly examine the emotional landscape 
+    of the following (partial) movie or series transcript. 
+    Trace the emotional trajectory of the characters and the evolving emotional atmosphere across the entire segment. 
+    For each moment, identify the predominant emotions (e.g., joy, sadness, tension, surprise, fear, anger, relief, boredom, wonder, anticipation, disgust) 
+    and assess their intensity, noting any significant emotional shifts, transitions, or climaxes. 
+    Consider how dialogue, actions, and narrative developments contribute to the overall emotional arc and the moment-to-moment emotional valence and arousal. 
+    Focus on capturing the dynamic, continuous emotional experience an audience would undergo while watching this clip.""")
     # ------------------------------------------------------------------
 
     # Combine the priming phrase with the existing metadata

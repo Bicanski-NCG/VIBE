@@ -29,7 +29,7 @@ def voxelwise_pearsonr(y_true: np.ndarray,
     )
 
 
-@lru_cache(maxsize=None) # We only ever use one atlas size
+#@lru_cache(maxsize=None) # We only ever use one atlas size
 def get_atlas(n_rois: int = 1000, yeo_networks: int = 7):
     """
     Fetch the Schaefer 2018 atlas with the specified number of ROIs.

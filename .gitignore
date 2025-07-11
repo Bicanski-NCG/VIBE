@@ -27,11 +27,15 @@ data/outputs/job_logs/*
 # legacy data
 Features/
 fmri/
+feat_out/
 
 # ignore env script
 env.sh
 */wandb/*
 */checkpoints/*
 */submissions/*
-*.out.*
-*.err.*
+*/job_logs/*
+*.out*
+*.out
+*.err*
+*.err

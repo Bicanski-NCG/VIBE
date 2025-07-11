@@ -34,6 +34,9 @@ features:
   vjepa2_ap_block0: "Vjepa2-Copy/outs_tr1.49_len6_before3/v-jepa2-ac-classifier-block0-fc2"
   vjepa2_ap_block_last: "Vjepa2-Copy/outs_tr1.49_len6_before3/v-jepa2-ac-classifier-block-last-fc2"
   audio_visual_features: "Visual/AVS_features"
+  labse_pool_l3_5: "Text/labse_pre0_post0_tr1.49/pool_l3_5"
+  labse_pool_l6_8: "Text/labse_pre0_post0_tr1.49/pool_l6_8"
+  labse_pool_l8_10: "Text/labse_pre0_post0_tr1.49/pool_l8_10"
 
 input_dims:
   aud_last: 2560
@@ -51,11 +54,11 @@ input_dims:
   # fast_stem_act: 1024
   pool_concat: 9216
   slow_res3_act: 4096
-  #slow_res5_act: 4096
+  # slow_res5_act: 4096
   slow_stem_act: 8192
-  #audio_long_context: 2048
-  #qwen_emotional: 5120
-  #qwen_big: 8192
+  # audio_long_context: 2048
+  qwen_emotional: 5120
+  # qwen_big: 8192
   audio_beats_high: 3072
   # audio_beats_low: 3072
   audio_whisper_high: 1280
@@ -67,6 +70,9 @@ input_dims:
   #vjepa2_vitl_final: 9216
   # vjepa2_vitl_pred5: 3456
   vjepa2_vitl_enc18: 9216
-  #vjepa2_ap: 174
+  # vjepa2_ap: 174
   # vjepa2_ap_block0: 9216
   vjepa2_ap_block_last: 9216
+  # labse_pool_l3_5: 768
+  # labse_pool_l6_8: 768
+  #labse_pool_l8_10: 768

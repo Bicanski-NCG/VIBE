@@ -370,7 +370,7 @@ def plot_diagnostics(model, loader, config, out_dir):
 
         r = voxelwise_pearsonr(true, pred)
 
-        masker = load_and_label_atlas(atlas_path, yeo_networks=config.yeo_networks, anatomical=True)
+        masker = load_and_label_atlas(atlas_path, yeo_networks=config.yeo_networks, anatomical=False)
 
         plot_glass_brain(r, sid, masker, out_dir=str(out_dir))
 
@@ -400,7 +400,7 @@ def plot_diagnostics(model, loader, config, out_dir):
     # ----- Group diagnostics -----
     logger.info("📊 Group diagnostics …")
     group_mean_r = np.mean([voxelwise_pearsonr(true, pred) for true, pred in zip(fmri_true, fmri_pred)], axis=0)
-    group_masker = load_and_label_atlas(atlas_paths[0], yeo_networks=config.yeo_networks, anatomical=True)  # use first atlas for group
+    group_masker = load_and_label_atlas(atlas_paths[0], yeo_networks=config.yeo_networks, anatomical=False)  # use first atlas for group
 
     plot_glass_brain(group_mean_r, "group", group_masker, out_dir=str(out_dir))
 

@@ -26,12 +26,15 @@ def get_train_val_loaders(config):
                       oversample_factor=config.oversample_factor,
                       modality_dropout_mode = config.modality_dropout_mode,
                       modality_dropout_prob = config.modality_dropout_prob,
-                      normalize_features = config.use_normalization
+                      normalize_features = config.use_normalization,
+                      loss_masks_path=config.loss_masks_path,
                       
                       )
 
     if config.filter_name is not None:
-        filter_fn = lambda sample: sample["name"] not in config.filter_name
+        #filter_fn = lambda sample: sample["name"] not in config.filter_name
+        filter_fn = lambda sample: all([filter_key not in sample["dataset_name"] for filter_key in config.filter_name])
+
         ds = ds.filter_samples(filter_fn)
     
     logger.info(f"Dataset size: {len(ds)} samples")
@@ -109,11 +112,20 @@ def get_full_loader(config):
         input_dims=config.input_dims,
         modalities=config.modalities,
         noise_std=0.0,   # no noise augmentation during full training
-        normalization_stats=norm_stats if config.use_normalization else None,
+        normalization_stats=norm_stats,
+        modality_dropout_mode = config.modality_dropout_mode,
+        modality_dropout_prob = config.modality_dropout_prob,
+        normalize_features = config.use_normalization,
+        loss_masks_path=config.loss_masks_path
     )
 
     if config.filter_name is not None:
-        filter_fn = lambda sample: sample["name"] not in config.filter_name
+
+       # filter_fn = lambda sample: sample["name"] not in config.filter_name
+
+        filter_fn = lambda sample: all([filter_key not in sample["dataset_name"] for filter_key in config.filter_name])
+
+
         ds_full = ds_full.filter_samples(filter_fn)
     
     logger.info(f"Dataset size: {len(ds_full)} samples")

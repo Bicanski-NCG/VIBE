@@ -14,7 +14,7 @@
 #SBATCH --ntasks-per-core=2
 #SBATCH --mem=125000M
 #
-#SBATCH --time=01:30:00
+#SBATCH --time=02:30:00
 
 . scripts/env.sh
 

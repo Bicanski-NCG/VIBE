@@ -1,0 +1,15 @@
+[project]
+name = "omar-music"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = "==3.10.*"
+dependencies = [
+    "moviepy>=2.2.1",
+    "soundfile>=0.13.1",
+    "ssl-mtg",
+    "torchaudio>=2.6.0",
+]
+
+[tool.uv.sources]
+ssl-mtg = { git = "https://github.com/MTG/omar-rq.git" }

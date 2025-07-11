@@ -162,6 +162,7 @@ def plot_glass_brain(r: np.ndarray,
                      masker: NiftiLabelsMasker,
                      *,
                      out_dir: os.PathLike | str = "plots",
+                     dataset_name: str = "dataset",
                      filename: str | None = None,
                      cmap: str = _DEFAULT_CMAP) -> Path:
     """Glass-brain of voxel-wise *r*."""
@@ -176,7 +177,7 @@ def plot_glass_brain(r: np.ndarray,
     )
     cbar = disp._cbar
     cbar.set_label("Pearson $r$", rotation=90, labelpad=12, fontsize=12)
-    name = f"{filename or 'glass_brain'}_{subj_id}.png"
+    name = f"{filename or 'glass_brain'}_{subj_id}_{dataset_name}.png"
     path = out_dir / name
     plt.savefig(path, dpi=150, bbox_inches='tight')
     disp.close()

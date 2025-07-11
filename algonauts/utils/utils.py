@@ -168,5 +168,38 @@ def ensure_paths_exist(*pairs):
         if not p.exists():
             raise FileNotFoundError(f"{pretty} not found: {p}")
         
+def collect_predictions_per_sample(loader, model, device):
+    model.eval()
+    fmri_true, fmri_pred, meta = [], [], []
+    sid_map = {v: k for k, v in loader.dataset.subject_name_id_dict.items()}
+
+    with torch.no_grad():
+        for batch in loader:            # batch-size == 1
+            sid_t  = batch["subject_ids"][0]
+            run_id = batch["run_ids"][0]
+            dataset_name = batch["dataset_names"][0]
+
+            fmri  = batch["fmri"].to(device)[0]
+            attn  = batch["attention_masks"].to(device)[0].bool()
+            feats = {k: batch[k].to(device) for k in loader.dataset.modalities}
+
+            pred = model(feats,
+                         batch["subject_ids"],
+                         batch["run_ids"],
+                         batch["attention_masks"].to(device))[0]
+
+            fmri_true.append(fmri[attn].cpu().numpy())
+            fmri_pred.append(pred[attn].cpu().numpy())
+
+            sid = sid_map[sid_t]
+            atlas_path = loader.dataset.samples[0]["subject_atlas"].format(subject=sid)
+
+            meta.append({"subject": sid,
+                         "run": run_id,
+                         "atlas_path": atlas_path,
+                         "dataset_name": dataset_name})
+
+    return fmri_true, fmri_pred, meta
+        
 
 

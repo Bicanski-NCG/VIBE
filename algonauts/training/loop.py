@@ -18,7 +18,6 @@ from algonauts.utils import collect_predictions
 
 def get_network_mask (target_networks,roi_masks):
 
-    raise ValueError(roi_masks)
 
     mask = np.zeros(1000)
 
@@ -179,7 +178,7 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                 is_train=False,
                 laplacians=laplacians,
                 config=config,
-                network_mask= network_mask
+                network_mask= None
             )
 
             wandb.log(

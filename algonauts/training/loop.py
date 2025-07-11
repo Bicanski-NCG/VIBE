@@ -9,7 +9,7 @@ from algonauts.training.losses import (
     masked_negative_pearson_loss,
     sample_similarity_loss,
     roi_similarity_loss,
-    spatial_regularizer_loss,masked_negative_rv_loss
+    spatial_regularizer_loss
 )
 from algonauts.utils.adjacency_matrices import get_laplacians
 from algonauts.utils.viz import load_and_label_atlas, roi_table, voxelwise_pearsonr
@@ -18,6 +18,7 @@ from algonauts.utils import collect_predictions
 
 def get_network_mask (target_networks,roi_masks):
 
+    raise ValueError(roi_masks)
 
     mask = np.zeros(1000)
 

@@ -19,7 +19,7 @@ features:
   slow_res5_act: "Visual/SlowFast_R101_tr1.49_no_center_crop/slow_res5_act"
   slow_stem_act: "Visual/SlowFast_R101_tr1.49_no_center_crop/slow_stem_act"
   audio_long_context: "Audio/Wave2Vec2/features_chunk1.49_len60_before50"
-  qwen_emotional: "Emotional/Qwen2.5_14_Full_tr1.49"
+  qwen_emotional: "Emotional/Qwen2.5_14_Full_silence_token_tr1.49"
   qwen_big: "Text/Qwen2.5_72B_Full_tr1.49/"
   audio_beats_high: "Audio/BEATS_Full_tr1.49_ctx10.0/high"
   audio_beats_low: "Audio/BEATS_Full_tr1.49_ctx10.0/low"

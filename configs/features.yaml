@@ -70,5 +70,5 @@ input_dims:
   # vjepa2_ap_block0: 9216
   vjepa2_ap_block_last: 9216
   #labse_pool_l3_5: 768
-  # labse_pool_l6_8: 768
+  labse_pool_l6_8: 768
   labse_pool_l8_10: 768

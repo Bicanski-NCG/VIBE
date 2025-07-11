@@ -76,7 +76,7 @@ val_name: "s06"
 val_run: "all"
 
 # Filter dataset of samples with label e.g. to filter out samples with name "life" or "hidden" use ["life", "figures"]
-filter_name:  ["figures", "life04", "life05"] # ["figures", "life03", "life04", "life05"]
+filter_name: ["figures", "life03", "life04", "life05"]
 
 loss_masks_path: null # "./loss_masks.pt" 
 

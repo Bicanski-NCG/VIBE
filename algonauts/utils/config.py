@@ -84,6 +84,10 @@ class Config:
     pct_bads: float = 0.1
     max_scatter_points: int = 50000
     yeo_networks: int = 7
+
+
+    target_networks: List[str] = None
+
     
     loss_masks_path: str = None
 

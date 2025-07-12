@@ -54,10 +54,14 @@ class EnsembleAverager(nn.Module):
         for model in self.models:
             # Ensure model is on the correct device
             #model.to(self.device)
-            device = next(model.parameters()).device
-            features = {m: f.to(device) for m, f in features.items()}
-            attention_mask = attention_mask.to(device)
+            if not isinstance(model, ROIAdaptiveEnsemble):
+                device = next(model.parameters()).device
+                features = {m: f.to(device) for m, f in features.items()}
+                attention_mask = attention_mask.to(device)
+            for k, v in features.items():
+                print(f"{k} has {v.isnan().sum()} nans")
             pred = model(features, subject_ids, run_ids, attention_mask)
+            #print(pred.isnan().sum())
             pred = self._row_normalise(pred).to(self.device)          # [B, T, V] normalised
             preds.append(pred)
             #if len(self.models) > 7:

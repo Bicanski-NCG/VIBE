@@ -22,9 +22,9 @@ class EnsembleAverager(nn.Module):
             # Load the model from checkpoint, move to device, set eval mode
             model.eval()
             self.models.append(model)
-            if len(self.models) > 20:
-                # If we have many models, move them to CPU to save VRAM
-                model.cpu()
+            # if len(self.models) > 20:
+            #     # If we have many models, move them to CPU to save VRAM
+            #     model.cpu()
 
     def _row_normalise(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -54,6 +54,9 @@ class EnsembleAverager(nn.Module):
         for model in self.models:
             # Ensure model is on the correct device
             #model.to(self.device)
+            device = next(model.parameters()).device
+            features = {m: f.to(device) for m, f in features.items()}
+            attention_mask = attention_mask.to(device)
             pred = model(features, subject_ids, run_ids, attention_mask)
             pred = self._row_normalise(pred).to(self.device)          # [B, T, V] normalised
             preds.append(pred)

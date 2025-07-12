@@ -22,7 +22,7 @@ class EnsembleAverager(nn.Module):
             # Load the model from checkpoint, move to device, set eval mode
             model.eval()
             self.models.append(model)
-            if len(self.models) > 20:
+            if len(self.models) > 10:
                 # If we have many models, move them to CPU to save VRAM
                 model.cpu()
 
@@ -53,13 +53,13 @@ class EnsembleAverager(nn.Module):
         preds = []
         for model in self.models:
             # Ensure model is on the correct device
-            #model.to(self.device)
+            model.to(self.device)
             pred = model(features, subject_ids, run_ids, attention_mask)
             pred = self._row_normalise(pred).to(self.device)          # [B, T, V] normalised
             preds.append(pred)
-            #if len(self.models) > 7:
+            if len(self.models) > 7:
                 # Send models to CPU to same VRAM
-                #model.cpu()
+                model.cpu()
         stacked = torch.stack(preds, dim=0)  # [N_models, B, T, V]
         return stacked.mean(dim=0)           # [B, T, V]
 

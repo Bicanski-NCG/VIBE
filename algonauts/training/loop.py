@@ -23,9 +23,11 @@ def get_network_mask (target_networks,roi_masks):
 
 
     for net in target_networks:
-        mask+= roi_masks[net]
 
-    return mask
+        mcop = roi_masks[net].copy().astype(int)
+        mask+= mcop
+
+    return mask.astype(bool)
 
 
 
@@ -117,6 +119,11 @@ def run_epoch(loader, model, optimizer, device, is_train, laplacians, config,net
         epoch_mse_loss += mse_loss.item()
         epoch_spatial_adjacency_loss+= spatial_adjacency_loss.item()
         epoch_network_adjacency_loss+= network_adjacency_loss.item()
+    logger.info(f"{config.lambda_sample}")
+    logger.info(f"{config.lambda_roi}")
+    logger.info(f"{config.lambda_sp_adj}")
+    logger.info(f"{config.lambda_net_adj}")
+
 
     total_loss = (
         epoch_negative_corr_loss / len(loader)
@@ -152,7 +159,7 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
     roi_to_epoch = {}
     labels = np.array(group_masker.labels[1:])
     roi_idxs = {roi: np.argwhere(labels == roi) for roi in labels} # 1: skip background
-    roi_masks = {roi: (labels == roi) for roi in labels} # 1: skip background
+    roi_masks = {roi: (labels == roi).copy() for roi in labels} # 1: skip background
 
 
     network_mask = get_network_mask(config.target_networks,roi_masks)
@@ -178,7 +185,7 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                 is_train=False,
                 laplacians=laplacians,
                 config=config,
-                network_mask= None
+                network_mask= network_mask
             )
 
             wandb.log(
@@ -230,11 +237,11 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
             wandb.log({"val/roi_scores": roi_to_scores}, commit=False)
 
             # If any ROI has best validation score this epoch, save the model
-            if epoch in roi_to_epoch.values():
-                epoch_patience_counter = 0
-            else:
-                epoch_patience_counter += 1
-
+            #if epoch in roi_to_epoch.values():
+            #    epoch_patience_counter = 0
+            #else:
+            #    epoch_patience_counter += 1
+            epoch_patience_counter = config.early_stop_patience
             # Log group-level Pearson correlation
             if current_val < best_val_loss:
                 best_val_loss = current_val
@@ -270,7 +277,7 @@ def full_loop(model, optimizer, scheduler, full_loader, ckpt_dir, config, best_v
     group_masker = load_and_label_atlas(full_loader.dataset.samples[0]["subject_atlas"], yeo_networks=7)
     labels = np.array(group_masker.labels[1:])
     roi_idxs = {roi: np.argwhere(labels == roi) for roi in labels} # 1: skip background
-    roi_masks = {roi: (labels == roi) for roi in labels} # 1: skip background
+    roi_masks = {roi: (labels == roi).copy() for roi in labels} # 1: skip background
 
 
     network_mask = get_network_mask(config.target_networks,roi_masks)
@@ -318,8 +325,8 @@ def full_loop(model, optimizer, scheduler, full_loader, ckpt_dir, config, best_v
 
         for roi_name, best_epoch in roi_to_epoch.items():
             if best_epoch == epoch:
-                logger.info(f"💾 Saved {roi_name} final model.")
-                torch.save(model.state_dict(), ckpt_dir / f"epoch_{epoch}_final_model.pt")
+                logger.info(f"💾  Saved {roi_name} final model.......NOT (Borat)")
+                #torch.save(model.state_dict(), ckpt_dir / f"epoch_{epoch}_final_model.pt")
 
         if epoch == best_val_epoch:
             torch.save(model.state_dict(), ckpt_dir / "final_model.pt")

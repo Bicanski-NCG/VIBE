@@ -62,7 +62,7 @@ def predict_fmri_for_test_set(
     model, feature_paths, sample_counts_root, ood_names, normalization_stats=None, device="cuda"
 ):
     model.eval()
-    model.to(device)
+    #model.to(device)
     subjects = ["sub-01", "sub-02", "sub-03", "sub-05"]
     subject_name_id_dict = {"sub-01": 0, "sub-02": 1, "sub-03": 2, "sub-05": 3}
 
@@ -169,14 +169,14 @@ def main():
     # Build model according to --ensemble or single checkpoint, with optional ROI wrap
     device = "cuda"
     if args.ensemble:
-        load_device = "cpu" if len(args.ensemble) > 25 else device
+        load_device = "cpu" if len(args.ensemble) > 10 else device
         # Ensemble averaging over provided run IDs
         checkpoint_names = args.ensemble
         # Load config from the first checkpoint
         first_ckpt_dir = output_root / "checkpoints" / checkpoint_names[0]
         _, config = load_model_from_ckpt(
             model_ckpt_path=str(first_ckpt_dir / "final_model.pt"),
-            params_path=str(first_ckpt_dir / "config.yaml"),
+            params_path=str(first_ckpt_dir / "config.yaml"),device = load_device
         )
         # Load each model and collect
         models = []
@@ -193,12 +193,12 @@ def main():
             else:
                 m, _ = load_model_from_ckpt(
                     model_ckpt_path=str(ckpt_dir / "final_model.pt"),
-                    params_path=str(ckpt_dir / "config.yaml"),
+                    params_path=str(ckpt_dir / "config.yaml"),device = load_device
                 )
             #m.to(load_device).eval()
             m.eval()
             models.append(m)
-        model = EnsembleAverager(models=models, device=device, normalize=True)
+        model = EnsembleAverager(models=models, device = device, normalize=True)
     else:
         # Single checkpoint path
         print(f"Loading model from checkpoint: {args.checkpoint}", flush=True)

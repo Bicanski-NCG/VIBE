@@ -59,13 +59,20 @@ def load_features_for_episode(episode_id, feature_paths, normalization_stats=Non
 
 
 def predict_fmri_for_test_set(
-    model, feature_paths, sample_counts_root, ood_names, normalization_stats=None, device="cuda"
+    model, feature_paths, sample_counts_root, test_names, normalization_stats=None, device="cuda"
 ):
     model.eval()
     model.to(device)
     subjects = ["sub-01", "sub-02", "sub-03", "sub-05"]
     subject_name_id_dict = {"sub-01": 0, "sub-02": 1, "sub-03": 2, "sub-05": 3}
 
+    if "s07" in test_names and len(test_names) > 1:
+        raise ValueError("Only one OOD dataset can be specified for season 7 predictions.")
+    elif "s07" in test_names:
+        samples_file_postfix = "_friends-s7_fmri_samples.npy"
+    else:
+        samples_file_postfix = "_ood_fmri_samples.npy" 
+    
     output_dict = {}
     for subj in subjects:
         output_dict[subj] = {}
@@ -75,12 +82,12 @@ def predict_fmri_for_test_set(
             sample_counts_root,
             subj,
             "target_sample_number",
-            f"{subj}_ood_fmri_samples.npy",
+            str(subj) + samples_file_postfix,
         )
         sample_counts = np.load(sample_dict_path, allow_pickle=True).item()
 
         for clip in sample_counts.keys():
-            if not any([ood in clip for ood in ood_names]):
+            if not any([ood in clip for ood in test_names]):
                 continue
             print(f"→  Processing {subj} - {clip}", flush=True)
             n_samples = sample_counts[clip]
@@ -124,7 +131,7 @@ def main():
                            "(default $OUTPUT_DIR or data/outputs)")
     args.add_argument("--roi_ensemble", action="store_true",
                       help="Use ROIAdaptiveEnsemble to select best models per ROI")
-    args.add_argument("--ood_names", type=str, default=None, nargs="+",
+    args.add_argument("--test_names", type=str, default=None, nargs="+",
                       help="Name of OOD dataset for which to make predictions")
     args = args.parse_args()
 
@@ -132,6 +139,12 @@ def main():
         name = "submission"
     else:
         name = args.name
+
+    if args.test_names is None:
+        args.test_names = ["chaplin", "mononoke", "passepartout", "planetearth", "pulpfiction", "wot"]
+        name = f"{name}_ood_all"
+    else:
+        name = f"{name}_{'_'.join(args.test_names)}"
 
     # Attach checkpoint or ensemble name to the submission name
     if args.checkpoint:
@@ -229,12 +242,27 @@ def main():
         model=model,
         feature_paths=feature_paths,
         sample_counts_root=config.data_dir,
-        ood_names=args.ood_names,
+        test_names=args.test_names,
         normalization_stats=None,
         device=device,
     )
+
+    # Some basic checks
+    for subj, clips in predictions.items():
+        for clip, pred in clips.items():
+            if not isinstance(pred, np.ndarray):
+                raise ValueError(f"Prediction for {subj} - {clip} is not a numpy array.")
+            if pred.ndim != 2:
+                raise ValueError(f"Prediction for {subj} - {clip} should be 2D, got {pred.ndim}D.")
+            if not np.issubdtype(pred.dtype, np.floating):
+                raise ValueError(f"Prediction for {subj} - {clip} should be a float array, got {pred.dtype}.")
+            if not pred.dtype == np.float32:
+                print("Warning: Prediction for {subj} - {clip} is not float32, it is {pred.dtype}.", flush=True)
+            if not np.isfinite(pred).all():
+                raise ValueError(f"Prediction for {subj} - {clip} contains non-finite values.")
+
     random_number = random.randint(0, 1000)
-    name = f"{name}_{'_'.join(args.ood_names)}_{random_number}"
+    name = f"{name}_{random_number}"
     output_file = submission_dir / f"{name}.npy"
     np.save(output_file, predictions, allow_pickle=True)
 

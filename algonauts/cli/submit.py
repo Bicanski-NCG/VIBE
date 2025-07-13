@@ -196,7 +196,8 @@ def main():
                     params_path=str(ckpt_dir / "config.yaml"),device = load_device
                 )
             #m.to(load_device).eval()
-            m.eval()
+            device = torch.device(f"cuda:{random.randrange(torch.cuda.device_count())}") if torch.cuda.is_available() else torch.device("cpu")
+            m.to(device).eval()
             models.append(m)
         model = EnsembleAverager(models=models, device = device, normalize=True)
     else:

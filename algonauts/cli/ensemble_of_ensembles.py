@@ -105,10 +105,15 @@ def describe_nested_dict(nested: NestedArrDict) -> None:
             print(f"    {inner_key:<15}: shape={arr.shape}, dtype={arr.dtype}")
 
 
-paths = ["many/submissions/submission_ensemble_wot_mononoke_pulpfiction_passepartout_planetearth_39.npy",
-         "no-text/submissions/submission_ensemble_chaplin_725.npy"]
+paths = ["many/submissions/submission_ensemble_mononoke_wot_551.npy",
+         "many/submissions/submission_ensemble_mononoke_wot_903.npy",
+         "pass6/submissions/submission_ensemble_passepartout_903.npy",
+         "life_is_good/submissions/submission_ensemble_planetearth_926.npy",
+         "planetearthjanis/submission_ensemble_chaplin_733.npy",
+         "planetearthjanis/submission_ensemble_pulpfiction_248.npy"
+         ]
 
-save_path_name = "many/submissions/ood"
+save_path_name = "many/submissions/ood6"
 
 average = average_nested_dict_arrays(paths)
 
@@ -121,4 +126,3 @@ zip_file = f"{save_path_name}.zip"
 with zipfile.ZipFile(zip_file, "w") as zipf:
     zipf.write(output_file, os.path.basename(output_file))
 print(f"Saved predictions to {zip_file}", flush=True)
-

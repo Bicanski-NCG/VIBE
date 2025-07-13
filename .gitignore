@@ -19,10 +19,7 @@ wheels/
 data/raw/fmri/*
 data/raw/stimuli/*
 data/features/*
-data/outputs/checkpoints/*
-data/outputs/submissions/*
-data/outputs/wandb/*
-data/outputs/job_logs/*
+data/outputs/*
 
 # legacy data
 Features/

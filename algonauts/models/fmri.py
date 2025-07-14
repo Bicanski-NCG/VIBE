@@ -4,7 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from scipy.stats import gamma
 from algonauts.models.rope import PredictionTransformerRoPE
-
+from algonauts.models.graph_models import *
+from algonauts.models.rope_gat import PredictionTransformerRoPE_GAT
 
 # ──────────────────────────────────────────────────────────────
 # Gated‑Multimodal Unit – scalar gate per modality per time‑step
@@ -295,8 +296,10 @@ class FMRIModel(nn.Module):
             use_transformer=use_fusion_transformer,
             use_run_embeddings=use_run_embeddings,
             num_layers_projection=proj_layers,
-            use_gmu=use_gmu,
-        )
+            use_gmu=use_gmu,adjacency_matrix = None, final_graph_convolution = False,
+            graph_convolution_rope =False,
+            pad_length = 650
+            )
 
         fused_dim = (
             fusion_hidden_dim * (len(input_dims) + 1 + int(use_run_embeddings))
@@ -313,16 +316,29 @@ class FMRIModel(nn.Module):
         else:
             # register a placeholder so .to(device) works later
             self.register_buffer("pre_tokens", torch.empty(0, fused_dim))
+            
+        if graph_convolution_rope:
+            if adjacency_matrix is None:
+                raise ValueError('Have to provide adjacency matrix for this option.')
+            self.predictor = PredictionTransformerRoPE_GAT(
+                input_dim=fused_dim,
+                output_dim=output_dim,
+                num_layers=pred_layers,
+                num_heads=pred_heads,
+                dropout=pred_dropout,
+                rope_pct=rope_pct,adjacency_matrix=adjacency_matrix,
+            )
 
 
-        self.predictor = PredictionTransformerRoPE(
-            input_dim=fused_dim,
-            output_dim=output_dim,
-            num_layers=pred_layers,
-            num_heads=pred_heads,
-            dropout=pred_dropout,
-            rope_pct=rope_pct,
-        )
+        else:
+            self.predictor = PredictionTransformerRoPE(
+                input_dim=fused_dim,
+                output_dim=output_dim,
+                num_layers=pred_layers,
+                num_heads=pred_heads,
+                dropout=pred_dropout,
+                rope_pct=rope_pct,
+            )
 
         self.n_prepend_zeros = n_prepend_zeros
         
@@ -351,6 +367,14 @@ class FMRIModel(nn.Module):
             self.hrf_conv = nn.Identity()
     
         self.mask_prob = mask_prob
+        self.pad_length = pad_length
+
+        if final_graph_convolution:
+            if adjacency_matrix is None:
+                raise ValueError('Have to provide adjacency matrix for this option.')
+            self.graph_convolver = FixedNetworkGraphAttention(dim = self.pad_length,adjacency_matrix=adjacency_matrix)
+
+        self.final_graph_convolution = final_graph_convolution
 
     def forward(self, features, subject_ids, run_ids, attention_mask):
         num_pre_post_timepoints = self.n_prepend_zeros
@@ -401,6 +425,15 @@ class FMRIModel(nn.Module):
 
         preds = self.predictor(fused, attention_mask)
 
+
+        if self.final_graph_convolution:
+            preds,padded = pad_to_fixed_length(preds,self.pad_length)
+
+            preds = preds+ self.graph_convolver(preds)
+            preds = preds[:,padded:]
+
+
+
         if self.num_pre_tokens > 0:
             preds = preds[:, self.num_pre_tokens :, :] 
 
@@ -412,7 +445,10 @@ class FMRIModel(nn.Module):
 
         # Remove the appended zeros from preds
         preds = preds[..., num_pre_post_timepoints : preds.shape[-2],:] 
-        #preds = preds[..., num_pre_post_timepoints : preds.shape[-2] - num_pre_post_timepoints, :]
+
+        if self.final_graph_convolution:
+
+            preds = preds[..., num_pre_post_timepoints : preds.shape[-2] - num_pre_post_timepoints, :]
 
 
         return preds

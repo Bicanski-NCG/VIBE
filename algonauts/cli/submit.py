@@ -7,7 +7,7 @@ import numpy as np
 import torch
 import zipfile
 from algonauts.models import load_model_from_ckpt
-from algonauts.models.ensemble import EnsembleAverager, ROIAdaptiveEnsemble
+from algonauts.models.ensemble import ROIAdaptiveEnsemble
 from algonauts.utils import ensure_paths_exist
 
 
@@ -21,6 +21,59 @@ def pad_to_length(x, target_len):
     repeat_count = target_len - x.shape[0]
     pad = x[-1:].repeat(repeat_count, 1)
     return torch.cat([x, pad], dim=0)
+
+
+# Helper to average prediction dictionaries
+def average_prediction_dicts(pred_list):
+    """
+    Average a list of nested prediction dictionaries returned by
+    `predict_fmri_for_test_set`.  Assumes all dicts share identical
+    subject/clip keys.
+    """
+    out = {}
+    for subj in pred_list[0]:
+        out[subj] = {}
+        for clip in pred_list[0][subj]:
+            stacked = np.stack([p[subj][clip] for p in pred_list], axis=0)
+            out[subj][clip] = stacked.mean(axis=0)
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# High‑level helpers
+# --------------------------------------------------------------------------- #
+def load_single_model(checkpoint_name: str, output_root: Path, *,
+                      device: str = "cuda", roi_ensemble: bool = False):
+    """
+    Load one checkpoint and return (model, config).  If `roi_ensemble` is
+    True the checkpoint is wrapped in ROIAdaptiveEnsemble.
+    """
+    ckpt_dir = output_root / "checkpoints" / checkpoint_name
+    model, config = load_model_from_ckpt(
+        model_ckpt_path=str(ckpt_dir / "final_model.pt"),
+        params_path=str(ckpt_dir / "config.yaml"),
+        device=device,
+    )
+    if roi_ensemble:
+        roi_labels = torch.load(ckpt_dir / "roi_names.pt", weights_only=False)
+        roi_to_epoch = torch.load(ckpt_dir / "roi_to_epoch.pt", weights_only=False)
+        model = ROIAdaptiveEnsemble(
+            roi_labels=roi_labels,
+            roi_to_epoch=roi_to_epoch,
+            ckpt_dir=ckpt_dir,
+            device=device,
+        )
+    model.to(device).eval()
+    return model, config
+
+
+def build_feature_paths(config):
+    """Return a {modality: path} dict restricted to the model input dims."""
+    return {
+        name: Path(config.features_dir) / path
+        for name, path in config.features.items()
+        if name in config.input_dims
+    }
 
 
 def load_features_for_episode(episode_id, feature_paths, normalization_stats=None):
@@ -82,7 +135,7 @@ def predict_fmri_for_test_set(
         for clip in sample_counts.keys():
             if not any([ood in clip for ood in ood_names]):
                 continue
-            print(f"→  Processing {subj} - {clip}", flush=True)
+            print(f"    →  Processing {subj} - {clip}", flush=True)
             n_samples = sample_counts[clip]
             try:
                 features = load_features_for_episode(
@@ -113,135 +166,83 @@ def predict_fmri_for_test_set(
 
 
 def main():
-    args = argparse.ArgumentParser(description="Make submission for fMRI predictions")
-    group = args.add_mutually_exclusive_group(required=True)
-    group.add_argument("--checkpoint", type=str, help="Checkpoint to load")
-    group.add_argument("--ensemble", type=str, nargs="+",
-                       help="List of checkpoints to load for ensemble averaging")
-    args.add_argument("--name", type=str, default=None, help="Name of output file")
-    args.add_argument("--output_dir", default=None, type=str,
-                      help="Root directory for outputs & checkpoints "
-                           "(default $OUTPUT_DIR or data/outputs)")
-    args.add_argument("--roi_ensemble", action="store_true",
-                      help="Use ROIAdaptiveEnsemble to select best models per ROI")
-    args.add_argument("--ood_names", type=str, default=None, nargs="+",
-                      help="Name of OOD dataset for which to make predictions")
-    args = args.parse_args()
+    parser = argparse.ArgumentParser(description="Make submission for fMRI predictions")
+    g = parser.add_mutually_exclusive_group(required=True)
+    g.add_argument("--checkpoint", type=str, help="Single checkpoint to load")
+    g.add_argument("--ensemble",   type=str, nargs="+",
+                   help="List of checkpoints to average")
+    parser.add_argument("--name", type=str, default="submission",
+                        help="Base name of the output files")
+    parser.add_argument("--output_dir", default=None, type=str,
+                        help="Root directory for outputs & checkpoints "
+                             "(default $OUTPUT_DIR or data/outputs)")
+    parser.add_argument("--roi_ensemble", action="store_true",
+                        help="Use ROIAdaptiveEnsemble per checkpoint")
+    parser.add_argument("--ood_names", type=str, required=True, nargs="+",
+                        help="OOD dataset names for which to make predictions")
+    args = parser.parse_args()
 
-    if args.name is None:
-        name = "submission"
-    else:
-        name = args.name
-
-    # Attach checkpoint or ensemble name to the submission name
-    if args.checkpoint:
-        name = f"{name}_{args.checkpoint}"
-    elif args.ensemble:
-        name = f"{name}_ensemble"
-
-    if not args.checkpoint and not args.ensemble:
-        raise ValueError("Please provide a checkpoint to load or an ensemble list.")
-    if args.checkpoint:
-        print(f"Using checkpoint: {args.checkpoint}", flush=True)
-    else:
-        print(f"Using ensemble checkpoints: {args.ensemble}", flush=True)
-
+    # ------------------------------------------------------------------ paths
     output_root = Path(args.output_dir or os.getenv("OUTPUT_DIR", "data/outputs"))
     submission_dir = output_root / "submissions"
-    checkpoint_dir = output_root / "checkpoints" / args.checkpoint if args.checkpoint else None
-    final_model_path = checkpoint_dir / "final_model.pt" if checkpoint_dir else None
-    config_path = checkpoint_dir / "config.yaml" if checkpoint_dir else None
+    ensure_paths_exist((output_root, "output_dir"))
+    submission_dir.mkdir(exist_ok=True)
 
-    ensure_paths_exist(
-        (output_root, "output_dir"),
-        *(([(checkpoint_dir, "checkpoint_dir")] if checkpoint_dir else [])),
-        *(([(final_model_path, "final_model.pt")] if final_model_path else [])),
-        *(([(config_path, "config.yaml")] if config_path else [])),
-    )
+    # ----------------------------------------------------------- load models
+    checkpoint_names = args.ensemble if args.ensemble else [args.checkpoint]
+    device       = "cuda"
+    load_device  = "cpu" if len(checkpoint_names) > 10 else device
 
-    try:
-        ensure_paths_exist(
-            (submission_dir, "submission_dir"),
+    models   = []
+    config   = None
+    for ckpt in checkpoint_names:
+        print(f"Loading model from checkpoint: {ckpt}", flush=True)
+        m, cfg = load_single_model(
+            ckpt,
+            output_root=output_root,
+            device=load_device,
+            roi_ensemble=args.roi_ensemble,
         )
-    except:
-        os.mkdir(submission_dir)
+        models.append(m)
+        if config is None:
+            config = cfg
 
-    # Build model according to --ensemble or single checkpoint, with optional ROI wrap
-    device = "cuda"
-    if args.ensemble:
-        load_device = "cpu" if len(args.ensemble) > 10 else device
-        # Ensemble averaging over provided run IDs
-        checkpoint_names = args.ensemble
-        # Load config from the first checkpoint
-        first_ckpt_dir = output_root / "checkpoints" / checkpoint_names[0]
-        _, config = load_model_from_ckpt(
-            model_ckpt_path=str(first_ckpt_dir / "final_model.pt"),
-            params_path=str(first_ckpt_dir / "config.yaml"),device = load_device
-        )
-        # Load each model and collect
-        models = []
-        for chk in checkpoint_names:
-            print(f"Loading model from checkpoint: {chk}", flush=True)
-            ckpt_dir = output_root / "checkpoints" / chk
-            if args.roi_ensemble:
-                m = ROIAdaptiveEnsemble(
-                    roi_labels=torch.load(ckpt_dir / "roi_names.pt", weights_only=False),
-                    roi_to_epoch=torch.load(ckpt_dir / "roi_to_epoch.pt", weights_only=False),
-                    ckpt_dir=ckpt_dir,
-                    device=load_device,
-                )
-            else:
-                m, _ = load_model_from_ckpt(
-                    model_ckpt_path=str(ckpt_dir / "final_model.pt"),
-                    params_path=str(ckpt_dir / "config.yaml"),device = load_device
-                )
-            #m.to(load_device).eval()
-            device = torch.device(f"cuda:{random.randrange(torch.cuda.device_count())}") if torch.cuda.is_available() else torch.device("cpu")
-            m.to(device).eval()
-            models.append(m)
-        model = EnsembleAverager(models=models, device = device, normalize=True)
-    else:
-        # Single checkpoint path
-        print(f"Loading model from checkpoint: {args.checkpoint}", flush=True)
-        checkpoint = args.checkpoint
-        checkpoint_dir = output_root / "checkpoints" / checkpoint
-        model, config = load_model_from_ckpt(
-            model_ckpt_path=str(checkpoint_dir / "final_model.pt"),
-            params_path=str(checkpoint_dir / "config.yaml"),
-        )
+    feature_paths = build_feature_paths(config)
+
+    # --------------------------------------------------------- predictions
+    print("Starting predictions...", flush=True)
+    preds_per_model = []
+    for idx, model in enumerate(models):
+        print(f"  ↳ running model {idx + 1}/{len(models)}", flush=True)
         model.to(device)
-        if args.roi_ensemble:
-            # Wrap in ROIAdaptiveEnsemble for per-ROI best iters
-            roi_labels = torch.load(checkpoint_dir / "roi_names.pt", weights_only=False)
-            roi_to_epoch = torch.load(checkpoint_dir / "roi_to_epoch.pt", weights_only=False)
-            model = ROIAdaptiveEnsemble(
-                roi_labels=roi_labels,
-                roi_to_epoch=roi_to_epoch,
-                ckpt_dir=checkpoint_dir,
-                device=device,
-            )
-    model.eval()
+        preds = predict_fmri_for_test_set(
+            model=model,
+            feature_paths=feature_paths,
+            sample_counts_root=config.data_dir,
+            ood_names=args.ood_names,
+            normalization_stats=None,
+            device=device,
+        )
+        preds_per_model.append(preds)
+        model.to(load_device)  # free GPU
 
-    feature_paths = {name: Path(config.features_dir) / path for name, path in config.features.items() if name in config.input_dims}
+    predictions = (preds_per_model[0] if len(preds_per_model) == 1
+                   else average_prediction_dicts(preds_per_model))
 
-    print("Starting predictions for fMRI season 7 episodes...", flush=True)
-    predictions = predict_fmri_for_test_set(
-        model=model,
-        feature_paths=feature_paths,
-        sample_counts_root=config.data_dir,
-        ood_names=args.ood_names,
-        normalization_stats=None,
-        device=device,
+    # -------------------------------------------------------------- saving
+    out_name = (
+        f"{args.name}_{'ensemble' if len(checkpoint_names) > 1 else checkpoint_names[0]}"
+        f"_{'_'.join(args.ood_names)}_{random.randint(0, 1000)}"
     )
-    random_number = random.randint(0, 1000)
-    name = f"{name}_{'_'.join(args.ood_names)}_{random_number}"
-    output_file = submission_dir / f"{name}.npy"
-    np.save(output_file, predictions, allow_pickle=True)
+    npy_path  = submission_dir / f"{out_name}.npy"
+    np.save(npy_path, predictions, allow_pickle=True)
 
-    zip_file = submission_dir / f"{name}.zip"
-    with zipfile.ZipFile(zip_file, "w") as zipf:
-        zipf.write(output_file, f"{name}.npy")
-    print(f"Saved predictions to {zip_file}", flush=True)
+    zip_path = submission_dir / f"{out_name}.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.write(npy_path, f"{out_name}.npy")
+
+    print(f"Saved predictions to {zip_path}", flush=True)
+
 
 if __name__ == "__main__":
     main()

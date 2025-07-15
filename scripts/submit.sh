@@ -3,7 +3,6 @@
 #SBATCH -o data/outputs/job_logs/%x-%j.out
 #SBATCH -e data/outputs/job_logs/%x-%j.err
 # Initial working directory:
-#SBATCH -D /u/danielcs/algonauts/Algonauts-Decoding
 # Job name
 #SBATCH -J algonauts-submission
 #
@@ -15,7 +14,7 @@
 #SBATCH --ntasks-per-core=2
 #SBATCH --mem=125000M
 #
-#SBATCH --time=00:40:00
+#SBATCH --time=01:40:00
 
 . scripts/env.sh
 

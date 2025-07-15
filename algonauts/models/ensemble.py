@@ -60,9 +60,9 @@ class EnsembleAverager(nn.Module):
             pred = model(features, subject_ids, run_ids, attention_mask)
             pred = self._row_normalise(pred).to(self.device)          # [B, T, V] normalised
             preds.append(pred)
-            #if len(self.models) > 7:
+            if len(self.models) > 7:
                 # Send models to CPU to same VRAM
-                #model.cpu()
+                model.cpu()
         stacked = torch.stack(preds, dim=0)  # [N_models, B, T, V]
         return stacked.mean(dim=0)           # [B, T, V]
 

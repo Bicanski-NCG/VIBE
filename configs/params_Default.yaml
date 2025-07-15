@@ -6,14 +6,15 @@
 
 # ------------- Training -------------
 
+
 # Max epochs
-epochs: 15
+epochs: 100
 
 # Batch size
 batch_size: 4
 
 # Learning rate
-lr: 0.0001
+lr: 0.00005
 
 # Number of warmup epochs
 warmup_epochs: 0
@@ -22,7 +23,7 @@ warmup_epochs: 0
 warmup_start_lr_factor: 0.1
 
 # Weight decay
-weight_decay: 0.0001
+weight_decay: 0.00005
 
 # Epochs patience
 early_stop_patience: 1
@@ -31,15 +32,15 @@ early_stop_patience: 1
 lambda_sample: 0
 lambda_roi: 0
 lambda_mse: 0.03
-lambda_net_adj: 0.0001
-lambda_sp_adj: 0.00001
+lambda_net_adj: 0.0000
+lambda_sp_adj: 0.00000
 
 # Spatial regularizer
 normalize_pred_for_spatial_regularizer: true
 spatial_sigma: 0.05
 
 # L2 regularization of HRF kernel towards canonical SPM form (does not contribute to loss)
-lambda_hrf: 0.001
+lambda_hrf: 0.000
 
 # Log roi correlations every N epochs. Set to 0 to disable ROI logging
 roi_log_interval: 1
@@ -76,10 +77,10 @@ val_name: "s06"
 val_run: "all"
 
 # Filter dataset of samples with label e.g. to filter out samples with name "life" or "hidden" use ["life", "figures"]
-filter_name: [] #["figures", "life03", "life04", "life05"]
+filter_name:  [] #["figures", "life03", "life04", "life05"]
 
 loss_masks_path: null # "./loss_masks.pt" 
-target_networks: ["Vis", "Default", "SomMot", "Cont", "SalVentAttn", "Limbic", "DorsAttn"]
+target_networks: ["Default"]
 save_rois: false
 
 # Performance settings

@@ -79,8 +79,7 @@ val_run: "all"
 filter_name: [] #["figures", "life03", "life04", "life05"]
 
 loss_masks_path: null # "./loss_masks.pt" 
-target_networks: ["Vis", "Default", "SomMot", "Cont", "SalVentAttn", "Limbic", "DorsAttn"]
-save_rois: false
+target_networks: ["DorsAttn"]
 
 # Performance settings
 num_workers: 8

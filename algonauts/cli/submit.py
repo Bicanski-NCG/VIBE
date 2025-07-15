@@ -7,7 +7,7 @@ import numpy as np
 import torch
 import zipfile
 from algonauts.models import load_model_from_ckpt
-from algonauts.models.ensemble import ROIAdaptiveEnsemble
+from algonauts.models.ensemble import EnsembleAverager, ROIAdaptiveEnsemble
 from algonauts.utils import ensure_paths_exist
 
 
@@ -21,59 +21,6 @@ def pad_to_length(x, target_len):
     repeat_count = target_len - x.shape[0]
     pad = x[-1:].repeat(repeat_count, 1)
     return torch.cat([x, pad], dim=0)
-
-
-# Helper to average prediction dictionaries
-def average_prediction_dicts(pred_list):
-    """
-    Average a list of nested prediction dictionaries returned by
-    `predict_fmri_for_test_set`.  Assumes all dicts share identical
-    subject/clip keys.
-    """
-    out = {}
-    for subj in pred_list[0]:
-        out[subj] = {}
-        for clip in pred_list[0][subj]:
-            stacked = np.stack([p[subj][clip] for p in pred_list], axis=0)
-            out[subj][clip] = stacked.mean(axis=0)
-    return out
-
-
-# --------------------------------------------------------------------------- #
-# High‑level helpers
-# --------------------------------------------------------------------------- #
-def load_single_model(checkpoint_name: str, output_root: Path, *,
-                      device: str = "cuda", roi_ensemble: bool = False):
-    """
-    Load one checkpoint and return (model, config).  If `roi_ensemble` is
-    True the checkpoint is wrapped in ROIAdaptiveEnsemble.
-    """
-    ckpt_dir = output_root / "checkpoints" / checkpoint_name
-    model, config = load_model_from_ckpt(
-        model_ckpt_path=str(ckpt_dir / "final_model.pt"),
-        params_path=str(ckpt_dir / "config.yaml"),
-        device=device,
-    )
-    if roi_ensemble:
-        roi_labels = torch.load(ckpt_dir / "roi_names.pt", weights_only=False)
-        roi_to_epoch = torch.load(ckpt_dir / "roi_to_epoch.pt", weights_only=False)
-        model = ROIAdaptiveEnsemble(
-            roi_labels=roi_labels,
-            roi_to_epoch=roi_to_epoch,
-            ckpt_dir=ckpt_dir,
-            device=device,
-        )
-    model.to(device).eval()
-    return model, config
-
-
-def build_feature_paths(config):
-    """Return a {modality: path} dict restricted to the model input dims."""
-    return {
-        name: Path(config.features_dir) / path
-        for name, path in config.features.items()
-        if name in config.input_dims
-    }
 
 
 def load_features_for_episode(episode_id, feature_paths, normalization_stats=None):
@@ -112,13 +59,20 @@ def load_features_for_episode(episode_id, feature_paths, normalization_stats=Non
 
 
 def predict_fmri_for_test_set(
-    model, feature_paths, sample_counts_root, ood_names, normalization_stats=None, device="cuda"
+    model, feature_paths, sample_counts_root, test_names, normalization_stats=None, device="cuda"
 ):
     model.eval()
-    #model.to(device)
+    model.to(device)
     subjects = ["sub-01", "sub-02", "sub-03", "sub-05"]
     subject_name_id_dict = {"sub-01": 0, "sub-02": 1, "sub-03": 2, "sub-05": 3}
 
+    if "s07" in test_names and len(test_names) > 1:
+        raise ValueError("Only one OOD dataset can be specified for season 7 predictions.")
+    elif "s07" in test_names:
+        samples_file_postfix = "_friends-s7_fmri_samples.npy"
+    else:
+        samples_file_postfix = "_ood_fmri_samples.npy" 
+    
     output_dict = {}
     for subj in subjects:
         output_dict[subj] = {}
@@ -128,14 +82,14 @@ def predict_fmri_for_test_set(
             sample_counts_root,
             subj,
             "target_sample_number",
-            f"{subj}_ood_fmri_samples.npy",
+            str(subj) + samples_file_postfix,
         )
         sample_counts = np.load(sample_dict_path, allow_pickle=True).item()
 
         for clip in sample_counts.keys():
-            if not any([ood in clip for ood in ood_names]):
+            if not any([ood in clip for ood in test_names]):
                 continue
-            print(f"    →  Processing {subj} - {clip}", flush=True)
+            print(f"→  Processing {subj} - {clip}", flush=True)
             n_samples = sample_counts[clip]
             try:
                 features = load_features_for_episode(
@@ -167,82 +121,140 @@ def predict_fmri_for_test_set(
 
 def main():
     parser = argparse.ArgumentParser(description="Make submission for fMRI predictions")
-    g = parser.add_mutually_exclusive_group(required=True)
-    g.add_argument("--checkpoint", type=str, help="Single checkpoint to load")
-    g.add_argument("--ensemble",   type=str, nargs="+",
-                   help="List of checkpoints to average")
-    parser.add_argument("--name", type=str, default="submission",
-                        help="Base name of the output files")
+    parser.add_argument("--checkpoint", type=str, nargs="+", required=True,
+                        help="Checkpoint(s) to load, single or multiple for ensemble averaging")
+    parser.add_argument("--name", type=str, default=None, help="Name of output file")
     parser.add_argument("--output_dir", default=None, type=str,
-                        help="Root directory for outputs & checkpoints "
-                             "(default $OUTPUT_DIR or data/outputs)")
+                        help="Root directory for outputs & checkpoints (default $OUTPUT_DIR or data/outputs)")
     parser.add_argument("--roi_ensemble", action="store_true",
-                        help="Use ROIAdaptiveEnsemble per checkpoint")
-    parser.add_argument("--ood_names", type=str, required=True, nargs="+",
-                        help="OOD dataset names for which to make predictions")
+                        help="Use ROIAdaptiveEnsemble to select best models per ROI")
+    parser.add_argument("--test_names", type=str, default=None, nargs="+",
+                        help="Name of dataset for which to make predictions")
     args = parser.parse_args()
 
-    # ------------------------------------------------------------------ paths
+    if args.name is None:
+        name = "submission"
+    else:
+        name = args.name
+
+    if args.test_names is None:
+        args.test_names = ["chaplin", "mononoke", "passepartout", "planetearth", "pulpfiction", "wot"]
+        name = f"{name}_ood_all"
+    else:
+        name = f"{name}_{'_'.join(args.test_names)}"
+
+    # Attach checkpoint(s) to submission name
+    name = f"{name}_ensemble" if len(args.checkpoint) > 1 else f"{name}_{args.checkpoint[0]}"
+
+    print(f"Using checkpoint(s): {args.checkpoint}", flush=True)
+
     output_root = Path(args.output_dir or os.getenv("OUTPUT_DIR", "data/outputs"))
     submission_dir = output_root / "submissions"
-    ensure_paths_exist((output_root, "output_dir"))
-    submission_dir.mkdir(exist_ok=True)
+    checkpoint_dir = output_root / "checkpoints" / args.checkpoint[0]
+    final_model_path = checkpoint_dir / "final_model.pt" if checkpoint_dir else None
+    config_path = checkpoint_dir / "config.yaml" if checkpoint_dir else None
 
-    # ----------------------------------------------------------- load models
-    checkpoint_names = args.ensemble if args.ensemble else [args.checkpoint]
-    device       = "cuda"
-    load_device  = "cpu" if len(checkpoint_names) > 10 else device
+    ensure_paths_exist(
+        (output_root, "output_dir"),
+        *(([(checkpoint_dir, "checkpoint_dir")] if checkpoint_dir else [])),
+        *(([(final_model_path, "final_model.pt")] if final_model_path else [])),
+        *(([(config_path, "config.yaml")] if config_path else [])),
+    )
 
-    models   = []
-    config   = None
-    for ckpt in checkpoint_names:
-        print(f"Loading model from checkpoint: {ckpt}", flush=True)
-        m, cfg = load_single_model(
-            ckpt,
-            output_root=output_root,
-            device=load_device,
-            roi_ensemble=args.roi_ensemble,
+    try:
+        ensure_paths_exist(
+            (submission_dir, "submission_dir"),
         )
-        models.append(m)
-        if config is None:
-            config = cfg
+    except:
+        os.mkdir(submission_dir)
 
-    feature_paths = build_feature_paths(config)
+    device = "cuda"
+    # Determine checkpoints to process (single or ensemble)
+    checkpoint_list = args.checkpoint
+    # Load config from first checkpoint
+    first_ckpt_dir = output_root / "checkpoints" / checkpoint_list[0]
+    _, config = load_model_from_ckpt(
+        model_ckpt_path=str(first_ckpt_dir / "final_model.pt"),
+        params_path=str(first_ckpt_dir / "config.yaml"),
+    )
+    # Prepare feature paths
+    feature_paths = {
+        name: Path(config.features_dir) / path
+        for name, path in config.features.items()
+        if name in config.input_dims
+    }
+    num_models = len(checkpoint_list)
+    predictions_sum = None
 
-    # --------------------------------------------------------- predictions
-    print("Starting predictions...", flush=True)
-    preds_per_model = []
-    for idx, model in enumerate(models):
-        print(f"  ↳ running model {idx + 1}/{len(models)}", flush=True)
-        model.to(device)
-        preds = predict_fmri_for_test_set(
-            model=model,
+    for i, chk in enumerate(checkpoint_list):
+        print(f"→ Loading and predicting with checkpoint ({i+1}/{len(checkpoint_list)}): {chk}", flush=True)
+        ckpt_dir = output_root / "checkpoints" / chk
+        # Load model (with optional ROI ensemble wrapper)
+        model_instance, _ = load_model_from_ckpt(
+            model_ckpt_path=str(ckpt_dir / "final_model.pt"),
+            params_path=str(ckpt_dir / "config.yaml"),
+        )
+        if args.roi_ensemble:
+            roi_labels = torch.load(ckpt_dir / "roi_names.pt", weights_only=False)
+            roi_to_epoch = torch.load(ckpt_dir / "roi_to_epoch.pt", weights_only=False)
+            model_instance = ROIAdaptiveEnsemble(
+                roi_labels=roi_labels,
+                roi_to_epoch=roi_to_epoch,
+                ckpt_dir=ckpt_dir,
+                device=device,
+            )
+        model_instance.to(device).eval()
+        current_preds = predict_fmri_for_test_set(
+            model=model_instance,
             feature_paths=feature_paths,
             sample_counts_root=config.data_dir,
-            ood_names=args.ood_names,
+            test_names=args.test_names,
             normalization_stats=None,
             device=device,
         )
-        preds_per_model.append(preds)
-        model.to(load_device)  # free GPU
+        if predictions_sum is None:
+            # Deep copy first model's predictions
+            predictions_sum = {
+                subj: {clip: pred.copy() for clip, pred in clips.items()}
+                for subj, clips in current_preds.items()
+            }
+        else:
+            for subj, clips in current_preds.items():
+                for clip, pred in clips.items():
+                    predictions_sum[subj][clip] += pred
+        # Clean up GPU memory
+        del model_instance
+        torch.cuda.empty_cache()
 
-    predictions = (preds_per_model[0] if len(preds_per_model) == 1
-                   else average_prediction_dicts(preds_per_model))
+    # Average predictions across models
+    for subj, clips in predictions_sum.items():
+        for clip in clips:
+            predictions_sum[subj][clip] /= num_models
+    predictions = predictions_sum
 
-    # -------------------------------------------------------------- saving
-    out_name = (
-        f"{args.name}_{'ensemble' if len(checkpoint_names) > 1 else checkpoint_names[0]}"
-        f"_{'_'.join(args.ood_names)}_{random.randint(0, 1000)}"
-    )
-    npy_path  = submission_dir / f"{out_name}.npy"
-    np.save(npy_path, predictions, allow_pickle=True)
+    # Some basic checks
+    for subj, clips in predictions.items():
+        for clip, pred in clips.items():
+            if not isinstance(pred, np.ndarray):
+                raise ValueError(f"Prediction for {subj} - {clip} is not a numpy array.")
+            if pred.ndim != 2:
+                raise ValueError(f"Prediction for {subj} - {clip} should be 2D, got {pred.ndim}D.")
+            if not np.issubdtype(pred.dtype, np.floating):
+                raise ValueError(f"Prediction for {subj} - {clip} should be a float array, got {pred.dtype}.")
+            if not pred.dtype == np.float32:
+                print("Warning: Prediction for {subj} - {clip} is not float32, it is {pred.dtype}.", flush=True)
+            if not np.isfinite(pred).all():
+                raise ValueError(f"Prediction for {subj} - {clip} contains non-finite values.")
 
-    zip_path = submission_dir / f"{out_name}.zip"
-    with zipfile.ZipFile(zip_path, "w") as zf:
-        zf.write(npy_path, f"{out_name}.npy")
+    random_number = random.randint(0, 1000)
+    name = f"{name}_{random_number}"
+    output_file = submission_dir / f"{name}.npy"
+    np.save(output_file, predictions, allow_pickle=True)
 
-    print(f"Saved predictions to {zip_path}", flush=True)
-
+    zip_file = submission_dir / f"{name}.zip"
+    with zipfile.ZipFile(zip_file, "w") as zipf:
+        zipf.write(output_file, f"{name}.npy")
+    print(f"Saved predictions to {zip_file}", flush=True)
 
 if __name__ == "__main__":
     main()

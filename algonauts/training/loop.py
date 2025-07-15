@@ -30,9 +30,7 @@ def get_network_mask (target_networks,roi_masks):
     return mask.astype(bool)
 
 
-
-
-def run_epoch(loader, model, optimizer, device, is_train, laplacians, config,network_mask = None):
+def run_epoch(loader, model, optimizer, device, is_train, laplacians, config, network_mask=None):
     """Run one training or validation epoch and return loss components."""
     if is_train:
         logger.info("📈 Training...")
@@ -71,7 +69,7 @@ def run_epoch(loader, model, optimizer, device, is_train, laplacians, config,net
             # fmri (B,T,V)
             
                 
-            negative_corr_loss = masked_negative_pearson_loss(pred, fmri, attn_mask,network_mask = network_mask)
+            negative_corr_loss = masked_negative_pearson_loss(pred, fmri, attn_mask, network_mask=network_mask)
             
             sample_loss = sample_similarity_loss(pred, fmri, attn_mask)
             roi_loss = roi_similarity_loss(pred, fmri, attn_mask)
@@ -80,8 +78,8 @@ def run_epoch(loader, model, optimizer, device, is_train, laplacians, config,net
             else:
                 normalized_pred = pred
 
-            spatial_adjacency_loss = spatial_regularizer_loss(normalized_pred,spatial_laplacian)
-            network_adjacency_loss = spatial_regularizer_loss(normalized_pred,network_laplacian)
+            spatial_adjacency_loss = spatial_regularizer_loss(normalized_pred, spatial_laplacian, mask=network_mask)
+            network_adjacency_loss = spatial_regularizer_loss(normalized_pred, network_laplacian, mask=network_mask)
             mse_loss = nn.functional.mse_loss(pred[...,network_mask], fmri[...,network_mask])
             loss = (
                 negative_corr_loss
@@ -162,7 +160,7 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
     roi_masks = {roi: (labels == roi).copy() for roi in labels} # 1: skip background
 
 
-    network_mask = get_network_mask(config.target_networks,roi_masks)
+    network_mask = get_network_mask(config.target_networks, roi_masks)
 
     for epoch in range(1, config.epochs + 1):
 
@@ -225,7 +223,7 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                 np.concatenate(fmri_pred, axis=0),
             )
            
-            for roi_name, roi_idx in roi_idxs.items():
+            for roi_name, roi_idx in [(name, idx) for name, idx in roi_idxs.items() if name in config.target_networks]:
                 roi_r = np.mean(voxelwise_r[roi_idx])
 
                 # Track best validation scores per ROI
@@ -237,11 +235,10 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
             wandb.log({"val/roi_scores": roi_to_scores}, commit=False)
 
             # If any ROI has best validation score this epoch, save the model
-            #if epoch in roi_to_epoch.values():
-            #    epoch_patience_counter = 0
-            #else:
-            #    epoch_patience_counter += 1
-            epoch_patience_counter = config.early_stop_patience
+            if epoch in roi_to_epoch.values():
+                epoch_patience_counter = 0
+            else:
+                epoch_patience_counter += 1
             # Log group-level Pearson correlation
             if current_val < best_val_loss:
                 best_val_loss = current_val

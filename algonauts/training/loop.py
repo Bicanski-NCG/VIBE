@@ -35,6 +35,7 @@ def run_epoch(loader, model, optimizer, device, is_train, laplacians, config, ne
     spatial_laplacian, network_laplacian = laplacians
     spatial_laplacian = spatial_laplacian.to(config.device)
     network_laplacian = network_laplacian.to(config.device)
+    network_mask = network_mask.to(config.device) if network_mask is not None else None
 
     epoch_negative_corr_loss = 0.0
     epoch_sample_loss = 0.0
@@ -46,7 +47,9 @@ def run_epoch(loader, model, optimizer, device, is_train, laplacians, config, ne
     model.train() if is_train else model.eval()
 
     all_preds, all_true = [], []
+    counter = 0
     for batch in loader:
+        counter += 1
         features = {k: batch[k].to(device, non_blocking=True) for k in loader.dataset.modalities}
 
         subject_ids = batch["subject_ids"]
@@ -92,14 +95,18 @@ def run_epoch(loader, model, optimizer, device, is_train, laplacians, config, ne
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
                 optimizer.step()
-                wandb.log(
-                    {
-                        "train_neg_corr_loss": negative_corr_loss.item(),
-                        "train_sample_loss": sample_loss.item(),
-                        "train_roi_loss": roi_loss.item(),
-                        "train_mse_loss": mse_loss.item(),
-                    },
-                )
+                if counter % 10:
+                    wandb.log(
+                        {
+                            "train_neg_corr_loss": negative_corr_loss.item(),
+                            "train_sample_loss": sample_loss.item(),
+                            "train_roi_loss": roi_loss.item(),
+                            "train_mse_loss": mse_loss.item(),
+                            "train_spatial_adjacency_loss": spatial_adjacency_loss.item(),
+                            "train_network_adjacency_loss": network_adjacency_loss.item(),
+                            "train_loss": loss.item(),
+                        },
+                    )
         
         if not is_train:
             mask = attn_mask.bool()
@@ -112,11 +119,6 @@ def run_epoch(loader, model, optimizer, device, is_train, laplacians, config, ne
         epoch_mse_loss += mse_loss.item()
         epoch_spatial_adjacency_loss+= spatial_adjacency_loss.item()
         epoch_network_adjacency_loss+= network_adjacency_loss.item()
-    logger.info(f"{config.lambda_sample}")
-    logger.info(f"{config.lambda_roi}")
-    logger.info(f"{config.lambda_sp_adj}")
-    logger.info(f"{config.lambda_net_adj}")
-
 
     total_loss = (
         epoch_negative_corr_loss / len(loader)
@@ -132,6 +134,8 @@ def run_epoch(loader, model, optimizer, device, is_train, laplacians, config, ne
         epoch_sample_loss / len(loader),
         epoch_roi_loss / len(loader),
         epoch_mse_loss / len(loader),
+        epoch_spatial_adjacency_loss / len(loader),
+        epoch_network_adjacency_loss / len(loader),
         all_preds, all_true
     )
 
@@ -167,7 +171,7 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                 is_train=True,
                 laplacians=laplacians,
                 config=config,
-                network_mask = network_mask
+                network_mask=network_mask
             )
             *val_losses, fmri_pred, fmri_true = run_epoch(
                 valid_loader,
@@ -177,7 +181,7 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                 is_train=False,
                 laplacians=laplacians,
                 config=config,
-                network_mask= network_mask
+                network_mask=network_mask
             )
 
             wandb.log(
@@ -189,6 +193,8 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                     "train/sample": train_losses[2],
                     "train/roi": train_losses[3],
                     "train/mse": train_losses[4],
+                    "train/spatial_adjacency_loss": train_losses[5],
+                    "train/network_adjacency_loss": train_losses[6],
 
                     # VAL
                     "val/loss":  val_losses[0],
@@ -197,6 +203,9 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                     "val/roi": val_losses[3],
                     "val/mse": val_losses[4],
                     "val/best_val_loss":best_val_loss,
+                    "val/spatial_adjacency_loss": val_losses[5],
+                    "val/network_adjacency_loss": val_losses[6],
+
                     # shared LR
                     "train/lr": optimizer.param_groups[0]["lr"]
                         if len(optimizer.param_groups) == 1

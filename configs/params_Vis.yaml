@@ -80,6 +80,7 @@ filter_name: [] #["figures", "life03", "life04", "life05"]
 
 loss_masks_path: null # "./loss_masks.pt" 
 target_networks: ["Vis"]
+save_rois: false
 
 # Performance settings
 num_workers: 8

@@ -16,18 +16,13 @@ from algonauts.utils.viz import load_and_label_atlas, roi_table, voxelwise_pears
 from algonauts.utils import collect_predictions
 
 
-def get_network_mask (target_networks,roi_masks):
-
-
-    mask = np.zeros(1000)
-
-
+def get_network_mask (target_networks, roi_masks):
+    mask = torch.zeros(1000)
     for net in target_networks:
-
         mcop = roi_masks[net].copy().astype(int)
         mask+= mcop
 
-    return mask.astype(bool)
+    return mask.bool()
 
 
 def run_epoch(loader, model, optimizer, device, is_train, laplacians, config, network_mask=None):
@@ -145,7 +140,7 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
     """Full training pipeline including early stopping. Returns best_val_epoch."""
 
     best_val_loss = float("inf")
-    patience_counter = 0
+    global_patience_counter = 0
     best_val_epoch = 0
     laplacians = get_laplacians(config.spatial_sigma)
 
@@ -158,7 +153,6 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
     labels = np.array(group_masker.labels[1:])
     roi_idxs = {roi: np.argwhere(labels == roi) for roi in labels} # 1: skip background
     roi_masks = {roi: (labels == roi).copy() for roi in labels} # 1: skip background
-
 
     network_mask = get_network_mask(config.target_networks, roi_masks)
 
@@ -236,9 +230,9 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
 
             # If any ROI has best validation score this epoch, save the model
             if epoch in roi_to_epoch.values():
-                epoch_patience_counter = 0
+                roi_patience_counter = 0
             else:
-                epoch_patience_counter += 1
+                roi_patience_counter += 1
             # Log group-level Pearson correlation
             if current_val < best_val_loss:
                 best_val_loss = current_val
@@ -246,20 +240,25 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                 torch.save(model.state_dict(), ckpt_dir / "best_model.pt")
                 wandb.log({"best_model_path": str(ckpt_dir / "best_model.pt")}, commit=False)
                 logger.info(f"💾 Saved new best (global) model at epoch {epoch}")
-                patience_counter = 0
+                global_patience_counter = 0
             else:
-                patience_counter += 1
+                global_patience_counter += 1
 
-            logger.info(f"Global patience: {patience_counter}/{config.early_stop_patience}, "
-                        f"ROI patience: {epoch_patience_counter}/{config.early_stop_patience}")
-            if patience_counter >= config.early_stop_patience and epoch_patience_counter >= config.early_stop_patience:
-                logger.info("🛑 Early stopping: patience exhausted.")
+            if global_patience_counter >= config.early_stop_patience and (roi_patience_counter >= config.early_stop_patience or not config.save_rois):
+                logger.info(f"🛑 Early stopping: patience exhausted at epoch {epoch}.")
                 break
+            else:
+                logger.info(f"Global patience: {global_patience_counter}/{config.early_stop_patience}, "
+                            f"ROI patience: {roi_patience_counter}/{config.early_stop_patience}")
+                wandb.log({
+                    "global_patience": global_patience_counter,
+                    "roi_patience": roi_patience_counter,
+                }, commit=False)
             
-
-    roi_names = np.array(group_masker.labels[1:])
-    torch.save(roi_names, ckpt_dir / "roi_names.pt")
-    torch.save(roi_to_epoch, ckpt_dir / "roi_to_epoch.pt")
+    if config.save_rois:
+        roi_names = np.array(group_masker.labels[1:])
+        torch.save(roi_names, ckpt_dir / "roi_names.pt")
+        torch.save(roi_to_epoch, ckpt_dir / "roi_to_epoch.pt")
 
     # Log best validation epoch and scores
     wandb.run.summary["best_val_pearson"] = best_val_loss
@@ -276,15 +275,19 @@ def full_loop(model, optimizer, scheduler, full_loader, ckpt_dir, config, best_v
     roi_idxs = {roi: np.argwhere(labels == roi) for roi in labels} # 1: skip background
     roi_masks = {roi: (labels == roi).copy() for roi in labels} # 1: skip background
 
-
     network_mask = get_network_mask(config.target_networks,roi_masks)
 
-    try:
-        roi_to_epoch = torch.load(ckpt_dir / "roi_to_epoch.pt", weights_only=False, map_location="cpu")
-    except FileNotFoundError:
-        roi_to_epoch = {}
+    if config.save_rois:
+        try:
+            roi_to_epoch = torch.load(ckpt_dir / "roi_to_epoch.pt", weights_only=False, map_location="cpu")
+        except FileNotFoundError:
+            roi_to_epoch = {}
+            logger.warning("No ROI to epoch mapping found, will not save per-ROI models.")
+        else:
+            logger.info(f"ROI to best epoch mapping: {roi_to_epoch}")
     else:
-        logger.info(f"ROI to best epoch mapping: {roi_to_epoch}")
+        roi_to_epoch = {}
+        logger.info("Not saving per-ROI models, skipping ROI to epoch mapping.")
 
     n_epochs = max(best_val_epoch, *[epoch for epoch in roi_to_epoch.values()], 0)
 
@@ -320,10 +323,11 @@ def full_loop(model, optimizer, scheduler, full_loader, ckpt_dir, config, best_v
         logger.info(f"🔄 LR stepped → {optimizer.param_groups[0]['lr']:.2e}")
         logger.info(f"🔎 NegCorr = {full_losses[1]:.4f}")
 
-        for roi_name, best_epoch in roi_to_epoch.items():
-            if best_epoch == epoch:
-                logger.info(f"💾  Saved {roi_name} final model.......NOT (Borat)")
-                #torch.save(model.state_dict(), ckpt_dir / f"epoch_{epoch}_final_model.pt")
+        if config.save_rois:
+            for roi_name, best_epoch in [(name, idx) for name, idx in roi_idxs.items() if name in config.target_networks]:
+                if best_epoch == epoch:
+                    logger.info(f"💾  Saved {roi_name} final model.......NOT (Borat)")
+                    torch.save(model.state_dict(), ckpt_dir / f"epoch_{epoch}_final_model.pt")
 
         if epoch == best_val_epoch:
             torch.save(model.state_dict(), ckpt_dir / "final_model.pt")

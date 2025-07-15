@@ -78,21 +78,14 @@ def build_model(config):
         proj_layers=config.proj_layers,
         fuse_mode=config.fuse_mode,
         subject_count=config.subject_count,
-        use_gmu=config.use_gmu,
         # temporal predictor hyper-params
         pred_layers=config.pred_layers,
         pred_heads=config.pred_heads,
         pred_dropout=config.pred_dropout,
         rope_pct=config.rope_pct,
-        # HRF-related
-        use_hrf_conv=config.use_hrf_conv,
-        learn_hrf=config.learn_hrf,
-        hrf_size=config.hrf_size,
-        tr_sec=config.tr_sec,
         # training
         mask_prob=config.mask_prob,
         # padding
-        num_pre_tokens=config.num_pre_tokens,
         n_prepend_zeros=config.n_prepend_zeros,
     )
     model.to(config.device)

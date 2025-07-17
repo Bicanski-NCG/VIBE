@@ -62,7 +62,7 @@ def main():
         print(f"Using ensemble checkpoints: {args.ensemble}", flush=True)
 
     output_root = Path(args.output_dir or os.getenv("OUTPUT_DIR", "data/outputs"))
-    shapley_dir = output_root / f"shapley_{args.num_permutations}_permutations_{args.max_batches}_batches_{batch_size}_batchsize{name}"
+    shapley_dir = output_root / f"shapley_{args.num_permutations}_permutations_{args.max_batches}_batches_{args.batch_size}_batchsize{name}"
     checkpoint_dir = output_root / "checkpoints" / args.checkpoint if args.checkpoint else None
     best_model_path = checkpoint_dir / "best_model.pt" if checkpoint_dir else None
     config_path = checkpoint_dir / "config.yaml" if checkpoint_dir else None
@@ -155,7 +155,6 @@ def main():
     for modality in config.input_dims.keys():
         contrib_vec = shapley_modes[modality]
         avg_contrib = contrib_vec.mean()
-        absmax = np.nanmax(np.abs(contrib_vec))
         cmap = sns.blend_palette(("#2166ac", "white", "#b2182b"), as_cmap=True)  # neg blue → pos red
 
         plot_voxel_contributions(

@@ -82,8 +82,16 @@ def main(args=None):
         (params_path,   "params YAML"),
         (features_dir,  "features_dir"),
         (data_dir,      "data_dir"),
-        (output_dir,    "output_dir"),
     )
+
+    try:
+        ensure_paths_exist(
+            (output_dir,   "output_dir"),
+        )
+    except:
+        # create output_dir
+        os.mkdir(output_dir)
+
     logger.info("✅ Paths validated.")
 
     # -------------------- CONFIG & W&B SETUP --------------------

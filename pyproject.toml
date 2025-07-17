@@ -3,17 +3,17 @@ name = "algonauts"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = "==3.11.*"
 dependencies = [
     "accelerate>=1.8.1",
-    "captum>=0.8.0",
     "h5py>=3.13.0",
     "ipykernel>=6.29.5",
     "ipywidgets>=8.1.7",
     "labml-nn>=0.4.137",
     "matplotlib>=3.10.1",
+    "msapy>=1.7.3",
     "nilearn>=0.10.4",
-    "numpy==1.23.5",
+    "numpy==2.3.1",
     "pyyaml>=6.0.2",
     "seaborn>=0.13.2",
     "torch>=2.6.0",
@@ -23,9 +23,6 @@ dependencies = [
 
 [tool.setuptools]
 packages = ["algonauts"]
-
-[tool.uv.workspace]
-members = ["algonauts/features/BEATs-Feature-Extraction"]
 
 [dependency-groups]
 dev = [
@@ -37,6 +34,7 @@ algonauts-train   = "algonauts.cli.train:main"
 algonauts-retrain = "algonauts.cli.retrain:main"
 algonauts-fit     = "algonauts.cli.fit:main"
 algonauts-submit  = "algonauts.cli.submit:main"
+algonauts-shapley = "algonauts.cli.shapley:main"
 
 [build-system]
 requires = ["setuptools"]

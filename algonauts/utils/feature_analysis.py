@@ -5,148 +5,9 @@ import torch, wandb
 from sklearn.linear_model import RidgeCV
 from math import factorial
 import random
-from captum.attr import ShapleyValues, ShapleyValueSampling
-
 from algonauts.utils.utils import evaluate_corr
 from algonauts.utils import logger
 from algonauts.training.losses import masked_negative_pearson_loss
-
-
-def shapley_captum(model, val_loader, device, modalities,
-                   n_samples: int = 2048, keep_frac: float = 1.0):
-    """
-    Return one scalar Shapley value ϕ per modality in ``modalities``.
-
-    Parameters
-    ----------
-    model : torch.nn.Module
-        Must accept positional args
-            (features_dict, subject_ids, run_ids, attention_mask, *extra)
-        where ``features_dict`` is {modality → Tensor[B,T,D]}.
-    val_loader : torch.utils.data.DataLoader
-        Yields the dict produced by ``collate_fn`` in data.py.
-    device : torch.device or str
-        Place tensors & model on this device.
-    modalities : list[str]
-        Keys inside each batch that you want to attribute.
-        Order matters – it is preserved in the output dict.
-    exact_cutoff : int
-        If ``len(modalities)`` ≤ this cutoff use exact enumeration
-        (`captum.attr.ShapleyValues`); otherwise use Monte‑Carlo
-        sampling (`ShapleyValueSampling`).
-    n_samples : int
-        Number of permutations for the Monte‑Carlo estimator.
-    keep_frac : float
-        Fraction of validation batches to **randomly** keep (between 0 and 1].
-        Use e.g. 0.1 to sample roughly 10 % of batches for attribution.
-
-    Returns
-    -------
-    dict
-        ``{ modality : float(phi) }`` – mean attribution over the
-        chosen validation batch.
-    """
-    model.eval().requires_grad_(False)
-
-    # ---- Wrap model.forward so Captum gets tensors/tuples ----------
-    def forward_packed(*args):
-        """
-        Captum calls this with
-            (*packed_inputs, subject_ids, run_ids, attention_mask, fmri_true)
-
-        We:
-          1. Move modality tensors and extras to `device`.
-          2. Run the model to get voxel predictions  (B, V).
-          3. Compute Pearson r with the ground‑truth fMRI for each sample.
-          4. Return the vector of r's  – one scalar per batch element.
-        """
-        n_mod = len(modalities)
-        feats_cpu   = args[:n_mod]           # tuple of modality tensors
-        fmri_true   = args[n_mod]
-        attn_mask   = args[n_mod + 1]
-        subj_ids    = args[n_mod + 2]
-        run_ids     = args[n_mod + 3]
-
-        feats_gpu = {m: feats_cpu[i].to(device, non_blocking=True)
-                     for i, m in enumerate(modalities)}
-        subj_ids  = subj_ids
-        run_ids   = run_ids
-        attn_mask = attn_mask.to(device)
-        fmri_true = fmri_true.to(device)     # (B, V)
-
-        preds = model(feats_gpu, subj_ids, run_ids, attn_mask)  # (B, V)
-
-        # -------- per‑sample Pearson correlation ---------------------
-        r_batch = -masked_negative_pearson_loss(
-            preds, fmri_true, attn_mask,
-            zero_center=True, network_mask=None
-        )
-        return r_batch
-
-    attr_engine = ShapleyValueSampling(forward_packed)
-
-    # -------- iterate over the entire validation loader --------------
-    phi_sum = {m: 0.0 for m in modalities}
-    n_batches = 0
-    n_samples = round(n_samples / len(modalities))  # samples per modality
-
-    for batch in val_loader:
-        # probabilistic subsampling of batches
-        if keep_frac < 1.0 and random.random() > keep_frac:
-            continue
-        packed_inputs = tuple(batch[m].to(device, non_blocking=True) for m in modalities)
-        baselines     = tuple(torch.zeros_like(t) for t in packed_inputs)
-
-        # gather any extra batch‑specific tensors the model expects
-        extras = [
-            batch["fmri"].to(device, non_blocking=True),  # ground‑truth fMRI
-            batch["attention_masks"].to(device, non_blocking=True),  # attention mask
-            batch["subject_ids"],  # subject IDs
-            batch["run_ids"]  # run IDs
-        ]
-        additional_forward_args = tuple(extras)
-
-        feature_mask = tuple(
-            torch.tensor(i, dtype=torch.long, device=device)
-            for i in range(len(modalities))
-        )
-
-        attributions = attr_engine.attribute(
-            inputs=packed_inputs,
-            baselines=baselines,
-            additional_forward_args=additional_forward_args,
-            feature_mask=feature_mask,
-            n_samples=n_samples,
-            show_progress=True,
-            perturbations_per_eval=1,
-        )
-
-        # accumulate mean attribution per modality
-        for m, a in zip(modalities, attributions):
-            phi_sum[m] += a.mean().item()
-        n_batches += 1
-
-    if n_batches == 0:
-        raise RuntimeError("keep_frac too small ‒ no batches sampled.")
-
-    # average across batches
-    phi = {m: v / n_batches for m, v in phi_sum.items()}
-
-    # ---- W&B bar chart of per‑modality importance -------------------
-    bar_table = wandb.Table(data=[[k, v] for k, v in phi.items()],
-                            columns=["modality", "phi"])
-    fig, ax = plt.subplots(figsize=(6, 3))
-    ax.bar(list(phi.keys()), list(phi.values()))
-    ax.set_ylabel("ϕ (Δ masked Pearson r)")
-    ax.set_xticklabels(phi.keys(), rotation=45, ha="right")
-    ax.set_title("Captum Shapley – contribution to masked r")
-    plt.tight_layout()
-    wandb.log({"shapley/bar_chart": wandb.Image(fig),
-               "shapley/table":     bar_table})
-    plt.close(fig)
-
-    return phi
-
 
 def feature_single_ablation(model, val_loader, device, base_r):
     """Leave‑one‑block Δr; returns delta_dict."""
@@ -247,9 +108,6 @@ def run_feature_analyses(model, val_loader, device):
     # ---------- analyses ----------------------------------------------
     with logger.step("🔹 Leave‑one‑block ablation"):
         delta_dict = feature_single_ablation(model, val_loader, device, base_r)
-
-    with logger.step(f"🔹 Running Shapley analysis on {len(blocks)} blocks."):
-        phi_dict = shapley_captum(model, val_loader, device, blocks, n_samples=512, keep_frac=0.5)
 
     if len(blocks) <= EXACT_CUTOFF:
         with logger.step("🔹 Pairwise redundancy"):

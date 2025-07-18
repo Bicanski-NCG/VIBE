@@ -8,4 +8,4 @@ jobs:
       - uses: astral-sh/ruff-action@v3
         with:
           src: "./algonauts"
-          args: "--exclude algonauts/features"
+          args: "check --exclude algonauts/features"

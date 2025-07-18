@@ -7,7 +7,7 @@ import numpy as np
 import torch
 import zipfile
 from algonauts.models import load_model_from_ckpt
-from algonauts.models.ensemble import EnsembleAverager, ROIAdaptiveEnsemble
+from algonauts.models.ensemble import ROIAdaptiveEnsemble
 from algonauts.utils import ensure_paths_exist
 
 
@@ -165,7 +165,7 @@ def main():
         ensure_paths_exist(
             (submission_dir, "submission_dir"),
         )
-    except:
+    except FileNotFoundError:
         os.mkdir(submission_dir)
 
     device = "cuda"

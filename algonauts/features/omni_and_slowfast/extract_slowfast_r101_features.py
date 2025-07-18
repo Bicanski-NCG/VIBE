@@ -16,7 +16,9 @@ from torchvision.transforms._transforms_video import (
     CenterCropVideo,
     NormalizeVideo,
 )
-import sys, types, torchvision.transforms.functional as TF 
+import sys
+import types
+import torchvision.transforms.functional as TF 
 mod = types.ModuleType("torchvision.transforms.functional_tensor") 
 mod.__dict__.update(TF.__dict__) 
 sys.modules["torchvision.transforms.functional_tensor"] = mod

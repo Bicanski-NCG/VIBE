@@ -1,7 +1,6 @@
 from collections import defaultdict
 import contextlib
 import time
-import glob
 import subprocess
 import sys
 import cv2
@@ -11,21 +10,18 @@ import argparse
 import numpy as np
 from tqdm import tqdm
 import random
-import soundfile as sf
-from itertools import islice
 import torch.nn.functional as F
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
 from transformers import AutoVideoProcessor, AutoModel
 
-
-import sys
-sys.path.append('vjepa2')
 # do before: git clone git@github.com:facebookresearch/vjepa2.git
 from src.models.attentive_pooler import AttentiveClassifier
 
 import warnings
 import logging
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+sys.path.append('vjepa2')
+
 
 def load_pretrained_vjepa_classifier_weights(model, pretrained_weights):
     # Load weights of the VJEPA2 classifier
@@ -43,7 +39,6 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 logging.getLogger().setLevel(logging.ERROR)
 logging.getLogger("torchvision").setLevel(logging.ERROR)
 
-import subprocess, shlex, io
 @contextlib.contextmanager
 def suppress_stdout():
     with open(os.devnull, 'w') as devnull:

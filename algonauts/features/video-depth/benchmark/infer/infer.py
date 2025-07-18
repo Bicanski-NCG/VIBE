@@ -7,7 +7,6 @@ from tqdm import tqdm
 import numpy as np
 
 from video_depth_anything.video_depth import VideoDepthAnything
-from utils.dc_utils import read_video_frames
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

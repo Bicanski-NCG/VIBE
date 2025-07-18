@@ -1,4 +1,3 @@
-import json
 import torch
 import torch.nn as nn
 import wandb
@@ -12,8 +11,7 @@ from algonauts.training.losses import (
     spatial_regularizer_loss
 )
 from algonauts.utils.adjacency_matrices import get_laplacians
-from algonauts.utils.viz import load_and_label_atlas, roi_table, voxelwise_pearsonr
-from algonauts.utils import collect_predictions
+from algonauts.utils.viz import load_and_label_atlas, voxelwise_pearsonr
 
 
 def get_network_mask (target_networks, roi_masks):
@@ -56,7 +54,6 @@ def run_epoch(loader, model, optimizer, device, is_train, laplacians, config, ne
         run_ids = batch["run_ids"]
         fmri = batch["fmri"].to(device)
         attn_mask = batch["attention_masks"].to(device)
-        loss_mask = batch["loss_mask"].to(device)
     
         if is_train:
             optimizer.zero_grad()
@@ -340,7 +337,7 @@ def full_loop(model, optimizer, scheduler, full_loader, ckpt_dir, config, best_v
 
         if epoch == best_val_epoch:
             torch.save(model.state_dict(), ckpt_dir / "final_model.pt")
-            logger.info(f"💾 Saved retrained model.")
+            logger.info("💾 Saved retrained model.")
             wandb.log({"final_model_path": str(ckpt_dir / "final_model.pt")}, commit=False)
 
         logger.close_step()

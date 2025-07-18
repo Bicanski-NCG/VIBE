@@ -11,12 +11,7 @@ import numpy as np
 import os.path as osp
 from PIL import Image
 from tqdm import tqdm
-import csv
-import imageio
 import cv2
-import json
-import glob
-import shutil
 
 from eval_utils import gen_json, get_sorted_files
 

@@ -51,7 +51,7 @@ def main():
         ensure_paths_exist(
             (output_dir,   "output_dir"),
         )
-    except:
+    except FileNotFoundError:
         # create output_dir
         os.mkdir(output_dir)
 

@@ -1,25 +1,35 @@
 from collections import defaultdict
 import contextlib
+import time
 import subprocess
 import sys
 import cv2
 import torch
 import os
 import argparse
+import numpy as np
 from tqdm import tqdm
 import random
-from itertools import islice 
+import torch.nn.functional as F
+from transformers import AutoVideoProcessor, AutoModel
 
-device = "auto" if torch.cuda.is_available() else "cpu"
-
-from transformers import (
-    Qwen2_5OmniProcessor,
-    Qwen2_5OmniForConditionalGeneration,
-)
-from qwen_omni_utils import process_mm_info  # comes with the official repo
+# do before: git clone git@github.com:facebookresearch/vjepa2.git
+from src.models.attentive_pooler import AttentiveClassifier
 
 import warnings
 import logging
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+sys.path.append('vjepa2')
+
+
+def load_pretrained_vjepa_classifier_weights(model, pretrained_weights):
+    # Load weights of the VJEPA2 classifier
+    # The PyTorch state_dict is already preprocessed to have the right key names
+    pretrained_dict = torch.load(pretrained_weights, weights_only=True, map_location="cpu")["classifiers"][0]
+    pretrained_dict = {k.replace("module.", ""): v for k, v in pretrained_dict.items()}
+    msg = model.load_state_dict(pretrained_dict, strict=False)
+    print("Pretrained weights found at {} and loaded with msg: {}".format(pretrained_weights, msg))
 
 # Suppress UserWarnings and FutureWarnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -27,8 +37,6 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 # Suppress the 'root' logger (Qwen's audio warning)
 logging.getLogger().setLevel(logging.ERROR)
-
-# Also suppress torchvision deprecation logger
 logging.getLogger("torchvision").setLevel(logging.ERROR)
 
 @contextlib.contextmanager
@@ -88,7 +96,7 @@ def split_movie_into_chunks(movie_path, tr, chunk_length, seconds_before_chunk):
 def cut_clip(src, t0, t1):
     os.makedirs("clips", exist_ok=True)
     random_number = random.randint(1, 1_000_000_000)
-    out = os.path.join("clips", f"{random_number}_chunk_{t0:.2f}_{t1:.2f}.mp4")
+    out = os.path.join("clips", f"{os.environ.get('SLURM_ARRAY_TASK_ID', 0)}_{random_number}_chunk_{t0:.2f}_{t1:.2f}.mp4")
     cmd = [
         "ffmpeg", "-loglevel", "error", "-y",      # overwrite silently
         "-ss", str(t0), "-to", str(t1), "-i", src, # seek
@@ -96,33 +104,21 @@ def cut_clip(src, t0, t1):
         out,
     ]
     subprocess.run(cmd, check=True)
+
+    for _ in range(10):
+
+        if os.path.isfile(out) and os.path.getsize(out) > 0:
+            cap = cv2.VideoCapture(out)
+            ret, _ = cap.read()
+            cap.release()
+            if ret:
+                break
+        else:
+            print("FAIL")
+        time.sleep(0.2)  # wait 200 ms
+
     return out
 
-def safe_mean_std(slice_: torch.Tensor):
-    """
-    Return mean and std that are *never* NaN.
-
-    • if the slice has ≥2 tokens → behave exactly like before  
-    • if the slice has 1 token   → std = 0 (mean unchanged)  
-    • if the slice is empty      → use the very last token of the clip
-    """
-    if slice_.numel() == 0:                 # empty → steal the last token
-        slice_ = slice_[-1:].detach()       # shape (1, D)
-
-    mean = slice_.mean(dim=0)
-
-    if slice_.shape[0] > 1:                 # ≥ 2 tokens → old behaviour
-        std  = slice_.std(dim=0)            # unbiased=True (default)
-    else:                                   # single token → std = 0
-        std  = torch.zeros_like(mean)
-
-    return mean, std
-
-def grouper(iterable, n):
-    "chunk iterable into fixed-size lists (last one may be shorter)"
-    it = iter(iterable)
-    while (chunk := list(islice(it, n))):
-        yield chunk
 
 # ------------------------------------------------------------------
 # 3) register forward hooks to capture hidden-states
@@ -149,40 +145,56 @@ def crop_by_time(tensor, rel_start, rel_end, clip_seconds):
     clip_seconds– total duration of this clip in seconds
     returns     – the slice of tokens that fall inside [rel_start, rel_end)
     """
-    if tensor.dim() == 3:          # (1, T, D) → (T, D)
-        tensor = tensor[0]
+    if tensor.dim() < 3:
+        return tensor.squeeze()
+
+    tensor = tensor.reshape(-1, 16, 16, tensor.shape[-1]) # T H W D
+    T, H, W, D = tensor.shape
+    
+    features_pooled = F.adaptive_avg_pool2d(
+        tensor.permute(0, 3, 1, 2),  # [T, D, H, W]
+        (3, 3)
+    ).permute(0, 2, 3, 1) # T H W D
 
     T = tensor.size(0)
     tok0 = min(T - 1, int(round(rel_start / clip_seconds * T)))
     tok1 = min(T,     max(tok0 + 1,
                           int(round(rel_end / clip_seconds * T))))
-    return tensor[tok0:tok1]       # shape (tok1-tok0, D)
+    tensor = features_pooled[tok0:tok1].mean(0).flatten()
+    return tensor     # shape (tok1-tok0, D)
 
 
-model_name = "Qwen/Qwen2.5-Omni-3B"
-processor = Qwen2_5OmniProcessor.from_pretrained(model_name)
-model = Qwen2_5OmniForConditionalGeneration.from_pretrained(
-    model_name,
-    torch_dtype=torch.bfloat16,
-    device_map=device,
-    attn_implementation="flash_attention_2",
-).thinker.eval()
+hf_model_name = (
+    "facebook/vjepa2-vitl-fpc64-256"  # Replace with your favored model, e.g. facebook/vjepa2-vitg-fpc64-384 # Updated to giant model
+)
+hf_transform = AutoVideoProcessor.from_pretrained(hf_model_name)
+
+hf_model = AutoModel.from_pretrained(hf_model_name)
+hf_model.cuda().eval()
+
+# wget https://dl.fbaipublicfiles.com/vjepa2/evals/ssv2-vitl-16x2x3.pt
+classifier_model_path = "ssv2-vitl-16x2x3.pt"
+classifier = (
+    AttentiveClassifier(embed_dim=1024, num_heads=16, depth=4, num_classes=174).cuda().eval()
+)
+load_pretrained_vjepa_classifier_weights(classifier, classifier_model_path)
 
 mapping = {
-    # video
-    "conv3d_features": model.visual.patch_embed,
-    "vis_block5": model.visual.blocks[4].norm1,
-    "vis_block8": model.visual.blocks[7].norm2,
-    "vis_block12": model.visual.blocks[11].norm2,
-    "vis_merged": model.visual.merger,
-    # audio
-    "audio_ln_post": model.audio_tower.ln_post,
-    "aud_last": model.audio_tower.layers[-1].final_layer_norm,
-    # thinker
-    "thinker_12": model.model.layers[11].post_attention_layernorm,
-    "thinker_24": model.model.layers[23].post_attention_layernorm,
-    "thinker_36": model.model.layers[35].post_attention_layernorm,
+    "v-jepa2-vitl-enc-10layer-fc2": hf_model.encoder.layer[10].mlp.fc2,
+    "v-jepa2-vitl-enc-18layer-norm2": hf_model.encoder.layer[18].norm2,
+    "v-jepa2-vitl-enc-20layer-fc2": hf_model.encoder.layer[20].mlp.fc2,
+    "v-jepa2-vitl-enc-last-ln": hf_model.encoder.layernorm,
+
+    "v-jepa2-vitl-predictor-5-layer-norm": hf_model.predictor.layer[5].norm1,
+    "v-jepa2-vitl-pred-fc1": hf_model.predictor.layer[11].mlp.fc1,
+
+    "v-jepa2-vitl-final-features": hf_model.predictor.proj,
+
+    "v-jepa2-ac-classifier-block0-fc2": classifier.pooler.blocks[0].mlp.fc2,
+    "v-jepa2-ac-classifier-block-last-fc2": classifier.pooler.blocks[-1].mlp.fc2,
+    "v-jepa2-ac-classifier-out": classifier.linear
 }
+
 store, handles = register_hooks(mapping)     # only once!
 
 
@@ -195,6 +207,8 @@ def process_video_folder(
     tr,
     chunk_length,
     seconds_before_chunk,
+    num_chunks,
+    chunk_id
 ):
     video_files = []
     for root, _, files in os.walk(input_folder):
@@ -204,15 +218,21 @@ def process_video_folder(
             if file.endswith(".mkv"):
                 video_files.append((root, file))
 
+
+    random.seed(0)
     random.shuffle(video_files)
+    chunks = np.array_split(video_files, num_chunks)
+
+    video_files = chunks[chunk_id]
 
     for root, file in tqdm(video_files, desc="Processing videos"):
         relative_path = os.path.relpath(root, input_folder)
         video_path = os.path.join(root, file)
+
         for k in mapping.keys():
             os.makedirs(os.path.join(output_folder, k, relative_path), exist_ok=True)
             output_path = os.path.join(output_folder, k, relative_path, file.split(".")[0] + ".pt")
-        
+
         if not os.path.isfile(output_path):
             extract_video_features(
                 video_path,
@@ -227,6 +247,29 @@ def process_video_folder(
                 seconds_before_chunk,
             )
 
+
+def get_video_from_path(video_path):
+    """
+    Load video from path and return as numpy array
+    Returns video in T x H x W x C format
+    """
+    cap = cv2.VideoCapture(video_path)
+    frames = []
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        # Convert BGR to RGB
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frames.append(frame)
+
+    cap.release()
+
+    if not frames:
+        raise ValueError(f"No frames could be read from {video_path}")
+
+    return np.stack(frames, axis=0)  
 
 @torch.no_grad()
 def extract_video_features(
@@ -250,24 +293,23 @@ def extract_video_features(
     for (c_start, c_end), (i_start, i_end) in tqdm(zip(chunks, chunk_of_interests), desc=f"Processing {os.path.basename(video_path)}"):                    # parallel meta info
         # 4.1 cut the clip -----------------------------------------
         clip_path = cut_clip(video_path, c_start, c_end)
+        video = get_video_from_path(clip_path)  # T x H x W x C
+        video = torch.from_numpy(video).permute(0, 3, 1, 2)  # T x C x H x W
 
-        # 4.2 grab hidden-states -----------------------------------
-        convo = [{"role":"user","content":[{"type":"video","video":clip_path}]}]
-        text  = processor.apply_chat_template(convo, tokenize=False,
-                                            add_generation_prompt=False)
-        aud, imgs, vids = process_mm_info(convo, use_audio_in_video=True)
-        inputs = processor(text=text, audio=aud, images=imgs, videos=vids,
-                        return_tensors="pt", padding=True, do_rescale=False,
-                        use_audio_in_video=True).to(model.device, model.dtype)
-        _ = model(**inputs, use_audio_in_video=True)
-        for k, tensors in store.items():
-            slice_of_interest = crop_by_time(tensors, i_start, i_end, c_end - c_start)
-            mean_of_interest, std_of_interest = safe_mean_std(slice_of_interest)
-            tensor_concat = torch.cat((mean_of_interest, std_of_interest), dim=0)
-            assert not torch.isnan(tensor_concat).any(), f"Got NaN at chunk {c_start}-{c_end}"
-            features[k].append(tensor_concat)
+        with torch.inference_mode():
+            x_hf = processor(video, return_tensors="pt")["pixel_values_videos"].to(device)
+
+            patch_feats = hf_model.get_vision_features(x_hf)
+            _ = classifier(patch_feats)
+
+
+            for k, tensors in store.items():
+                slice_of_interest = crop_by_time(tensors, i_start, i_end, c_end - c_start)
+                features[k].append(slice_of_interest)
+
         os.remove(clip_path)
-        store.clear() 
+        store.clear()
+
     for k, v in features.items():
         features[k] = torch.stack(v, dim=0)
 
@@ -279,42 +321,52 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input_folder",
         type=str,
-        default="/u/shdixit/MultimodalBrainModel/data/algonauts_2025.competitors/stimuli/movies",
+        default="/path/to/input/stimuli",
         help="Path to the input folder containing videos",
     )
     parser.add_argument(
         "--output_folder",
         type=str,
-        default="/u/shdixit/MultimodalBrainModel/Features/Omni/Qwen2.5_3B/features",
+        default="/path/to/output/features",
         help="Path to the output folder where features will be stored",
     )
     parser.add_argument("--tr", type=float, default=1.49, help="TR")
     parser.add_argument(
         "--chunk_length",
         type=int,
-        default=30,
+        default=8,
         help="Total duration of each chunk in seconds",
     )
     parser.add_argument(
         "--seconds_before_chunk",
         type=int,
-        default=28.5,
+        default=6,
+        help="Length of video included before the chunk's start time",
+    )
+    parser.add_argument(
+        "--num_chunks",
+        type=int,
+        default=25,
+    )
+    parser.add_argument(
+        "--chunk_id",
+        type=int,
+        default=0,
         help="Length of video included before the chunk's start time",
     )
 
     args = parser.parse_args()
 
-    # bnb_config = BitsAndBytesConfig(
-    #     load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16  # Set False for 8-bit
-    # )
     output_folder = f"{args.output_folder}_tr{args.tr}_len{args.chunk_length}_before{args.seconds_before_chunk}"
     process_video_folder(
         args.input_folder,
         output_folder,
-        model,
-        processor,
+        hf_model,
+        hf_transform,
         mapping,
         args.tr,
         args.chunk_length,
         args.seconds_before_chunk,
+        args.num_chunks,
+        args.chunk_id
     )

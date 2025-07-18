@@ -206,10 +206,7 @@ class FMRI_Dataset(Dataset):
         run_id = int(sample_info["has_multiple_runs"]) + sample_info["run"]
         fmri_file = sample_info["fmri_file"]
         dataset_name = sample_info["dataset_name"]
-
-        file_name_features = (
-            f"{dataset_name.split('-')[-1]}"
-        )
+        file_name = sample_info["file_name"]
 
         h5 = self._get_h5(fmri_file)
 
@@ -249,7 +246,7 @@ class FMRI_Dataset(Dataset):
         min_samples = fmri_response_tensor.shape[0]
 
         for modality, root_path in self.feature_paths.items():
-            path = self.find_feature_file(modality, file_name_features)
+            path = self.find_feature_file(modality, file_name)
             data = self._get_feature(path)
 
             if data.isnan().any():
@@ -517,7 +514,7 @@ def compute_statistics(feature_paths, cov_univariate=True,include_ood = False):
         for root, _, files in os.walk(path):
             for file in tqdm(files):
                 full_path = os.path.join(root, file)
-                if include_ood ==False:
+                if not include_ood:
                     if 'ood' in full_path:
                         continue
 
@@ -538,7 +535,7 @@ def compute_statistics(feature_paths, cov_univariate=True,include_ood = False):
                         centered_data = data - mean.unsqueeze(-2)
                         M2 = torch.matmul(centered_data.transpose(-1, -2), centered_data)
                 else:
-                    old_mean = mean.clone()
+                    mean.clone()
                     mean, M2_new_contribution = increment_mean_and_M2(data, mean, M, cov_univariate)
                     M2 += M2_new_contribution
 

@@ -1,14 +1,6 @@
 import os
-import numpy as np
 import os.path as osp
-from PIL import Image
 from tqdm import tqdm
-import csv
-import cv2
-import json
-import glob
-from natsort import natsorted
-import shutil
 
 from eval_utils import gen_json, get_sorted_files, copy_crop_files
 

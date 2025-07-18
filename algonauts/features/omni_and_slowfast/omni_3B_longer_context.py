@@ -1,6 +1,5 @@
 from collections import defaultdict
 import contextlib
-import glob
 import subprocess
 import sys
 import cv2
@@ -9,8 +8,6 @@ import os
 import argparse
 from tqdm import tqdm
 import random
-import soundfile as sf
-from itertools import islice
 import warnings
 import logging
 

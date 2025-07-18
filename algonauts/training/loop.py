@@ -1,4 +1,3 @@
-import json
 import torch
 import torch.nn as nn
 import wandb
@@ -9,14 +8,22 @@ from algonauts.training.losses import (
     masked_negative_pearson_loss,
     sample_similarity_loss,
     roi_similarity_loss,
-    spatial_regularizer_loss,
+    spatial_regularizer_loss
 )
 from algonauts.utils.adjacency_matrices import get_laplacians
-from algonauts.utils.viz import load_and_label_atlas, roi_table, voxelwise_pearsonr
-from algonauts.utils import collect_predictions
+from algonauts.utils.viz import load_and_label_atlas, voxelwise_pearsonr
 
 
-def run_epoch(loader, model, optimizer, device, is_train, laplacians, config):
+def get_network_mask (target_networks, roi_masks):
+    mask = torch.zeros(1000)
+    for net in target_networks:
+        mcop = roi_masks[net].copy().astype(int)
+        mask+= mcop
+
+    return mask.bool()
+
+
+def run_epoch(loader, model, optimizer, device, is_train, laplacians, config, network_mask=None):
     """Run one training or validation epoch and return loss components."""
     if is_train:
         logger.info("📈 Training...")
@@ -26,6 +33,7 @@ def run_epoch(loader, model, optimizer, device, is_train, laplacians, config):
     spatial_laplacian, network_laplacian = laplacians
     spatial_laplacian = spatial_laplacian.to(config.device)
     network_laplacian = network_laplacian.to(config.device)
+    network_mask = network_mask.to(config.device) if network_mask is not None else None
 
     epoch_negative_corr_loss = 0.0
     epoch_sample_loss = 0.0
@@ -37,15 +45,16 @@ def run_epoch(loader, model, optimizer, device, is_train, laplacians, config):
     model.train() if is_train else model.eval()
 
     all_preds, all_true = [], []
+    counter = 0
     for batch in loader:
+        counter += 1
         features = {k: batch[k].to(device, non_blocking=True) for k in loader.dataset.modalities}
 
         subject_ids = batch["subject_ids"]
         run_ids = batch["run_ids"]
         fmri = batch["fmri"].to(device)
         attn_mask = batch["attention_masks"].to(device)
-        loss_mask = batch["loss_mask"].to(device)
-
+    
         if is_train:
             optimizer.zero_grad()
 
@@ -53,9 +62,10 @@ def run_epoch(loader, model, optimizer, device, is_train, laplacians, config):
             pred = model(features, subject_ids, run_ids,attn_mask)
             # pred (B,T,V)
             # fmri (B,T,V)
-            pred = pred*loss_mask
-            fmri = fmri*loss_mask
-            negative_corr_loss = masked_negative_pearson_loss(pred, fmri, attn_mask)
+            
+                
+            negative_corr_loss = masked_negative_pearson_loss(pred, fmri, attn_mask, network_mask=network_mask)
+            
             sample_loss = sample_similarity_loss(pred, fmri, attn_mask)
             roi_loss = roi_similarity_loss(pred, fmri, attn_mask)
             if config.normalize_pred_for_spatial_regularizer:
@@ -63,9 +73,9 @@ def run_epoch(loader, model, optimizer, device, is_train, laplacians, config):
             else:
                 normalized_pred = pred
 
-            spatial_adjacency_loss = spatial_regularizer_loss(normalized_pred,spatial_laplacian)
-            network_adjacency_loss = spatial_regularizer_loss(normalized_pred,network_laplacian)
-            mse_loss = nn.functional.mse_loss(pred, fmri)
+            spatial_adjacency_loss = spatial_regularizer_loss(normalized_pred, spatial_laplacian, mask=network_mask)
+            network_adjacency_loss = spatial_regularizer_loss(normalized_pred, network_laplacian, mask=network_mask)
+            mse_loss = nn.functional.mse_loss(pred[...,network_mask], fmri[...,network_mask])
             loss = (
                 negative_corr_loss
                 + config.lambda_sample * sample_loss
@@ -82,14 +92,18 @@ def run_epoch(loader, model, optimizer, device, is_train, laplacians, config):
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
                 optimizer.step()
-                wandb.log(
-                    {
-                        "train_neg_corr_loss": negative_corr_loss.item(),
-                        "train_sample_loss": sample_loss.item(),
-                        "train_roi_loss": roi_loss.item(),
-                        "train_mse_loss": mse_loss.item(),
-                    },
-                )
+                if counter % 10:
+                    wandb.log(
+                        {
+                            "train_neg_corr_loss": negative_corr_loss.item(),
+                            "train_sample_loss": sample_loss.item(),
+                            "train_roi_loss": roi_loss.item(),
+                            "train_mse_loss": mse_loss.item(),
+                            "train_spatial_adjacency_loss": spatial_adjacency_loss.item(),
+                            "train_network_adjacency_loss": network_adjacency_loss.item(),
+                            "train_loss": loss.item(),
+                        },
+                    )
         
         if not is_train:
             mask = attn_mask.bool()
@@ -117,6 +131,8 @@ def run_epoch(loader, model, optimizer, device, is_train, laplacians, config):
         epoch_sample_loss / len(loader),
         epoch_roi_loss / len(loader),
         epoch_mse_loss / len(loader),
+        epoch_spatial_adjacency_loss / len(loader),
+        epoch_network_adjacency_loss / len(loader),
         all_preds, all_true
     )
 
@@ -125,7 +141,7 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
     """Full training pipeline including early stopping. Returns best_val_epoch."""
 
     best_val_loss = float("inf")
-    patience_counter = 0
+    global_patience_counter = 0
     best_val_epoch = 0
     laplacians = get_laplacians(config.spatial_sigma)
 
@@ -135,8 +151,14 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
     # Track ROI validation correlations
     roi_to_scores = {}
     roi_to_epoch = {}
-   
+    labels = np.array(group_masker.labels[1:])
+    roi_idxs = {roi: np.argwhere(labels == roi) for roi in labels} # 1: skip background
+    roi_masks = {roi: (labels == roi).copy() for roi in labels} # 1: skip background
+
+    network_mask = get_network_mask(config.target_networks, roi_masks)
+
     for epoch in range(1, config.epochs + 1):
+
         with logger.step(f"🚀 Epoch {epoch}/{config.epochs} …"):
             *train_losses, _, _ = run_epoch(
                 train_loader,
@@ -146,6 +168,7 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                 is_train=True,
                 laplacians=laplacians,
                 config=config,
+                network_mask=network_mask
             )
             *val_losses, fmri_pred, fmri_true = run_epoch(
                 valid_loader,
@@ -155,6 +178,7 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                 is_train=False,
                 laplacians=laplacians,
                 config=config,
+                network_mask=network_mask
             )
 
             wandb.log(
@@ -166,6 +190,8 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                     "train/sample": train_losses[2],
                     "train/roi": train_losses[3],
                     "train/mse": train_losses[4],
+                    "train/spatial_adjacency_loss": train_losses[5],
+                    "train/network_adjacency_loss": train_losses[6],
 
                     # VAL
                     "val/loss":  val_losses[0],
@@ -173,6 +199,9 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                     "val/sample": val_losses[2],
                     "val/roi": val_losses[3],
                     "val/mse": val_losses[4],
+                    "val/best_val_loss":best_val_loss,
+                    "val/spatial_adjacency_loss": val_losses[5],
+                    "val/network_adjacency_loss": val_losses[6],
 
                     # shared LR
                     "train/lr": optimizer.param_groups[0]["lr"]
@@ -193,12 +222,9 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                 np.concatenate(fmri_true, axis=0),
                 np.concatenate(fmri_pred, axis=0),
             )
-            labels = np.array(group_masker.labels[1:])
-            roi_scores = {}
-            roi_idxs = {roi: np.argwhere(labels == roi) for roi in labels} # 1: skip background
-            for roi_name, roi_idx in roi_idxs.items():
+           
+            for roi_name, roi_idx in [(name, idx) for name, idx in roi_idxs.items() if name in config.target_networks]:
                 roi_r = np.mean(voxelwise_r[roi_idx])
-                roi_scores[roi_name] = roi_r
 
                 # Track best validation scores per ROI
                 if roi_name not in roi_to_scores or roi_r > roi_to_scores[roi_name]:
@@ -206,14 +232,13 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                     roi_to_epoch[roi_name] = epoch
                     logger.info(f"🏆 New best {roi_name} at epoch {epoch}: {roi_r:.4f}")
 
-            wandb.log({"val/roi_scores": roi_scores}, commit=False)
+            wandb.log({"val/roi_scores": roi_to_scores}, commit=False)
 
             # If any ROI has best validation score this epoch, save the model
             if epoch in roi_to_epoch.values():
-                epoch_patience_counter = 0
+                roi_patience_counter = 0
             else:
-                epoch_patience_counter += 1
-
+                roi_patience_counter += 1
             # Log group-level Pearson correlation
             if current_val < best_val_loss:
                 best_val_loss = current_val
@@ -221,20 +246,25 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                 torch.save(model.state_dict(), ckpt_dir / "best_model.pt")
                 wandb.log({"best_model_path": str(ckpt_dir / "best_model.pt")}, commit=False)
                 logger.info(f"💾 Saved new best (global) model at epoch {epoch}")
-                patience_counter = 0
+                global_patience_counter = 0
             else:
-                patience_counter += 1
+                global_patience_counter += 1
 
-            logger.info(f"Global patience: {patience_counter}/{config.early_stop_patience}, "
-                        f"ROI patience: {epoch_patience_counter}/{config.early_stop_patience}")
-            if patience_counter >= config.early_stop_patience and epoch_patience_counter >= config.early_stop_patience:
-                logger.info("🛑 Early stopping: patience exhausted.")
+            if global_patience_counter >= config.early_stop_patience and (roi_patience_counter >= config.early_stop_patience or not config.save_rois):
+                logger.info(f"🛑 Early stopping: patience exhausted at epoch {epoch}.")
                 break
+            else:
+                logger.info(f"Global patience: {global_patience_counter}/{config.early_stop_patience}, "
+                            f"ROI patience: {roi_patience_counter}/{config.early_stop_patience}")
+                wandb.log({
+                    "global_patience": global_patience_counter,
+                    "roi_patience": roi_patience_counter,
+                }, commit=False)
             
-
-    roi_names = np.array(group_masker.labels[1:])
-    torch.save(roi_names, ckpt_dir / "roi_names.pt")
-    torch.save(roi_to_epoch, ckpt_dir / "roi_to_epoch.pt")
+    if config.save_rois:
+        roi_names = np.array(group_masker.labels[1:])
+        torch.save(roi_names, ckpt_dir / "roi_names.pt")
+        torch.save(roi_to_epoch, ckpt_dir / "roi_to_epoch.pt")
 
     # Log best validation epoch and scores
     wandb.run.summary["best_val_pearson"] = best_val_loss
@@ -246,13 +276,24 @@ def full_loop(model, optimizer, scheduler, full_loader, ckpt_dir, config, best_v
     """Retrain the model from initial state on the full dataset for best_val_epoch epochs."""
 
     laplacians = get_laplacians(config.spatial_sigma)
+    group_masker = load_and_label_atlas(full_loader.dataset.samples[0]["subject_atlas"], yeo_networks=7)
+    labels = np.array(group_masker.labels[1:])
+    roi_idxs = {roi: np.argwhere(labels == roi) for roi in labels} # 1: skip background
+    roi_masks = {roi: (labels == roi).copy() for roi in labels} # 1: skip background
 
-    try:
-        roi_to_epoch = torch.load(ckpt_dir / "roi_to_epoch.pt", weights_only=False, map_location="cpu")
-    except FileNotFoundError:
-        roi_to_epoch = {}
+    network_mask = get_network_mask(config.target_networks,roi_masks)
+
+    if config.save_rois:
+        try:
+            roi_to_epoch = torch.load(ckpt_dir / "roi_to_epoch.pt", weights_only=False, map_location="cpu")
+        except FileNotFoundError:
+            roi_to_epoch = {}
+            logger.warning("No ROI to epoch mapping found, will not save per-ROI models.")
+        else:
+            logger.info(f"ROI to best epoch mapping: {roi_to_epoch}")
     else:
-        logger.info(f"ROI to best epoch mapping: {roi_to_epoch}")
+        roi_to_epoch = {}
+        logger.info("Not saving per-ROI models, skipping ROI to epoch mapping.")
 
     n_epochs = max(best_val_epoch, *[epoch for epoch in roi_to_epoch.values()], 0)
 
@@ -267,6 +308,7 @@ def full_loop(model, optimizer, scheduler, full_loader, ckpt_dir, config, best_v
             is_train=True,
             laplacians=laplacians,
             config=config,
+            network_mask=network_mask
         )
 
         wandb.log(
@@ -287,14 +329,15 @@ def full_loop(model, optimizer, scheduler, full_loader, ckpt_dir, config, best_v
         logger.info(f"🔄 LR stepped → {optimizer.param_groups[0]['lr']:.2e}")
         logger.info(f"🔎 NegCorr = {full_losses[1]:.4f}")
 
-        for roi_name, best_epoch in roi_to_epoch.items():
-            if best_epoch == epoch:
-                logger.info(f"💾 Saved {roi_name} final model.")
-                torch.save(model.state_dict(), ckpt_dir / f"epoch_{epoch}_final_model.pt")
+        if config.save_rois:
+            for roi_name, best_epoch in [(name, idx) for name, idx in roi_idxs.items() if name in config.target_networks]:
+                if best_epoch == epoch:
+                    logger.info(f"💾  Saved {roi_name} final model.......NOT (Borat)")
+                    torch.save(model.state_dict(), ckpt_dir / f"epoch_{epoch}_final_model.pt")
 
         if epoch == best_val_epoch:
             torch.save(model.state_dict(), ckpt_dir / "final_model.pt")
-            logger.info(f"💾 Saved retrained model.")
+            logger.info("💾 Saved retrained model.")
             wandb.log({"final_model_path": str(ckpt_dir / "final_model.pt")}, commit=False)
 
         logger.close_step()

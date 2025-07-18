@@ -1,0 +1,10 @@
+# merge_plan.yaml
+atlas: data/raw/fmri/sub-01/atlas/sub-01_space-MNI152NLin2009cAsym_atlas-Schaefer18_parcel-1000Par7Net_desc-dseg_parcellation.nii.gz # single reference for masks
+output_path: data/ood_model_joined.npy
+
+merge:
+  base: "data/outputs/ood_model_1_fixed/submissions/ood_model_1_fixed_ensemble_chaplin_mononoke_passepartout_planetearth_pulpfiction_wot_326.npy"
+  movies:
+    passepartout: "data/outputs/ood_model_1_fixed_fr/submissions/oof_model_1_fixed_fr_ensemble_chaplin_mononoke_passepartout_planetearth_pulpfiction_wot_619.npy"
+  networks:
+    Vis: "data/outputs/ood_model_1_fixed_vis/submissions/oof_model_1_fixed_vis_ensemble_chaplin_mononoke_passepartout_planetearth_pulpfiction_wot_644.npy"

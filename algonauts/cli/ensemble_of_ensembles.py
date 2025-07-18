@@ -2,8 +2,6 @@ import os
 import numpy as np
 from typing import List, Dict
 import zipfile
-import numpy as np
-from typing import List, Dict
 
 ArrayDict     = Dict[str, np.ndarray]
 NestedArrDict = Dict[str, ArrayDict]

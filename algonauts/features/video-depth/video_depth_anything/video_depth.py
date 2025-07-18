@@ -16,15 +16,12 @@ import torch.nn.functional as F
 import torch.nn as nn
 from torchvision.transforms import Compose
 import cv2
-from tqdm import tqdm
 import numpy as np
-import gc
 
 from .dinov2 import DINOv2
 from .dpt_temporal import DPTHeadTemporal
 from .util.transform import Resize, NormalizeImage, PrepareForNet
 
-from utils.util import compute_scale_and_shift, get_interpolate_frames
 
 # infer settings, do not change
 INFER_LEN = 32

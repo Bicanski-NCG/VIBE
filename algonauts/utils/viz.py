@@ -239,9 +239,9 @@ def plot_voxel_contributions(
     cbar = disp._cbar
     cbar.set_label(colorbar_label, rotation=90, labelpad=12, fontsize=12)
 
-    name = f"{filename or 'voxel_contrib'}.png"
+    name = f"{filename or 'voxel_contrib'}.pdf"
     path = Path(out_dir) / name
-    plt.savefig(path, dpi=150, bbox_inches="tight")
+    plt.savefig(path, dpi=600, bbox_inches="tight")
     disp.close()
     _wandb_log_image(path)
     return path

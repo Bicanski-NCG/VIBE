@@ -136,11 +136,15 @@ def main():
 
     objective_function = get_objective_function(model, valid_loader, device=device, max_batches=args.max_batches)
 
-    shapley_modes = msa.interface(
-        n_permutations=args.num_permutations,
-        elements=list(config.input_dims.keys()),
-        objective_function=objective_function,
-    )
+
+    if os.path.exists(shapley_dir / "shapley_modes.csv"):
+        shapley_modes = pd.read_csv(shapley_dir / "shapley_modes.csv")
+    else:
+        shapley_modes = msa.interface(
+            n_permutations=args.num_permutations,
+            elements=list(config.input_dims.keys()),
+            objective_function=objective_function,
+        )
 
     #shaples_modes = pd.read_csv("shap_ood1/shapley_2_permutations_None/shapley_modes.csv")
 
@@ -163,7 +167,7 @@ def main():
             cmap=cmap,        # <-- assuming you added cmap param; see patched fn below
             vmin=-absmax,
             vmax=absmax,
-            title=f"{modality} contributions. Avg. Contrib {avg_contrib}",
+            title=f"{modality} contributions. Avg. Contrib {avg_contrib:.5f}",
             out_dir=shapley_dir,
             filename=modality,
         )

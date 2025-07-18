@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Dict, Optional
 
 @dataclass
@@ -118,7 +118,7 @@ class Config:
         Config
             A Config object populated with the parameters from the YAML files.
         """
-        import yaml, random
+        import yaml
 
         # load features.yaml
         with open(features_path, "r") as f:

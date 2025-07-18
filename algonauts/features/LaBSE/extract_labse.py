@@ -8,7 +8,7 @@ Output: one .npy file per TSV, shape (num_tr, 4096)
 import argparse
 import os
 from datetime import timedelta
-from typing import List, Tuple
+from typing import List
 
 import numpy as np
 import pandas as pd

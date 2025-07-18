@@ -14,11 +14,17 @@ Highlights
   collapse that second dimension by averaging before any further pooling.
 """
 
-import argparse, math, os, random, tempfile, warnings
+import argparse
+import math
+import os
+import random
+import tempfile
+import warnings
 from typing import List, Optional, Tuple
 
 import numpy as np
-import torch, torchaudio
+import torch
+import torchaudio
 from moviepy.editor import VideoFileClip
 from BEATs import BEATs, BEATsConfig
 from tqdm import tqdm

@@ -1,6 +1,5 @@
 from collections import defaultdict
 import contextlib
-import glob
 import subprocess
 import sys
 import cv2
@@ -9,7 +8,6 @@ import os
 import argparse
 from tqdm import tqdm
 import random
-import soundfile as sf
 from itertools import islice 
 
 device = "auto" if torch.cuda.is_available() else "cpu"
@@ -33,7 +31,6 @@ logging.getLogger().setLevel(logging.ERROR)
 # Also suppress torchvision deprecation logger
 logging.getLogger("torchvision").setLevel(logging.ERROR)
 
-import subprocess, shlex, io
 @contextlib.contextmanager
 def suppress_stdout():
     with open(os.devnull, 'w') as devnull:

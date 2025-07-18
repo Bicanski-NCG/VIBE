@@ -1,14 +1,11 @@
 
 import numpy as np
 import cv2
-import matplotlib.pyplot as plt
 import json
 
 import argparse
-from scipy.ndimage import map_coordinates
 from tqdm import tqdm
 import os
-import gc
 
 import torch
 from metric import *

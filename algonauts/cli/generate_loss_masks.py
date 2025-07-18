@@ -8,7 +8,6 @@ import numpy as np
 import torch
 from algonauts.models import load_model_from_ckpt
 from algonauts.models.ensemble import EnsembleAverager, ROIAdaptiveEnsemble
-from algonauts.utils import ensure_paths_exist
 from tqdm import  tqdm
 
 
@@ -20,7 +19,8 @@ def generate_loss_masks(model,
 
 
     if mask_generation_function is None:
-        mask_generation_function = lambda preds,true: generate_correlation_mask(preds,true)
+        def mask_generation_function(preds, true):
+            return generate_correlation_mask(preds,true)
 
 
     if isinstance(mask_filter,str):
@@ -41,7 +41,9 @@ def generate_loss_masks(model,
     modality_dropout_prob = config.modality_dropout_prob,
     normalize_features = config.use_normalization)
 
-    filter_fn = lambda sample: sample["name"] in mask_filter
+    def filter_fn(sample):
+        return sample["name"] in mask_filter
+    
     dataset = dataset.filter_samples(filter_fn)
 
 
@@ -143,12 +145,9 @@ def main():
 
 
     if args.use_mask == 'pearsonr':
-        mask_generation_function = lambda pred,true: generate_correlation_mask(pred,true,
-                                                                               smooth=args.smooth,
-                                                                               smooth_window=args.smooth_window,
-                                                                               mode=args.cutoff_mode,
-                                                                               cutoff=args.cutoff,
-                                                                               use_top_k_voxels=args.use_top_k)
+        def mask_generation_function(pred, true):
+            return generate_correlation_mask(pred, true, smooth=args.smooth, smooth_window=args.smooth_window,
+                                             mode=args.cutoff_mode, cutoff=args.cutoff, use_top_k_voxels=args.use_top_k)
     else:
         raise NotImplementedError
 
@@ -183,7 +182,7 @@ def main():
         ensure_paths_exist(
             (submission_dir, "submission_dir"),
         )
-    except:
+    except FileNotFoundError:
         os.mkdir(submission_dir)
 
     # Build model according to --ensemble or single checkpoint, with optional ROI wrap

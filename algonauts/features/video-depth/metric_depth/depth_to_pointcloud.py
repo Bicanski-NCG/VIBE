@@ -18,7 +18,7 @@ import torch
 import open3d as o3d
 
 from video_depth_anything.video_depth import VideoDepthAnything
-from utils.dc_utils import read_video_frames, save_video
+from utils.dc_utils import read_video_frames
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Video Depth Anything')

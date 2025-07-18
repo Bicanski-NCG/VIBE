@@ -25,6 +25,7 @@ data/outputs/*
 Features/
 fmri/
 feat_out/
+runs/
 
 # ignore env script
 env.sh

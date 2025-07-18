@@ -1,41 +1,23 @@
-"""
-Visualization utilities for Algonauts-Decoding.
-
-All “plot_…” functions save their output into *out_dir* and return the
-`Path` to the generated file so the caller can pass it to W-and-B or any
-other logger.
-"""
-
 from __future__ import annotations
-
-# ————————————————————————
-# Standard library
-# ————————————————————————
 import gzip
 import os
 import pickle
 from pathlib import Path
-from typing import Iterable, Literal, Sequence
-
-# ————————————————————————
-# Third-party
-# ————————————————————————
+from typing import Literal
 import matplotlib.pyplot as plt
 import numpy as np
-from nilearn import datasets, plotting
+from nilearn import plotting
 from nilearn.maskers import NiftiLabelsMasker
 from scipy.signal import welch
 from scipy.stats import pearsonr
 import pandas as pd
 import wandb
-import torch
-import glob
 
 from algonauts.utils.utils import voxelwise_pearsonr
+from algonauts.utils.utils import get_atlas
+from algonauts.utils import logger, collect_predictions
 
-# ----------------------------------------------------------------------
-# W&B helper
-# ----------------------------------------------------------------------
+
 def _wandb_log_image(img_path: Path, key_prefix: str = "viz"):
     """
     Log *img_path* to Weights & Biases under key ``f"{key_prefix}/{name}"``.
@@ -46,21 +28,11 @@ def _wandb_log_image(img_path: Path, key_prefix: str = "viz"):
                   commit=False)
 
 # ————————————————————————
-# Local imports
-# ————————————————————————
-from algonauts.utils.utils import get_atlas
-from algonauts.utils import logger, collect_predictions
-
-# ————————————————————————
 # Module-level constants
 # ————————————————————————
 _DEFAULT_CMAP = "hot_r"
 _RESIDUAL_CMAP = "cold_hot"
 
-
-# ==========================================================================
-# Helper utilities
-# ==========================================================================
 
 def ensure_dir(path: os.PathLike | str) -> Path:
     """Create *path* if necessary and return it as `Path` instance."""
@@ -68,10 +40,6 @@ def ensure_dir(path: os.PathLike | str) -> Path:
     p.mkdir(parents=True, exist_ok=True)
     return p
 
-
-# ==========================================================================
-# Atlas helpers
-# ==========================================================================
 
 def load_and_label_atlas(atlas_path: os.PathLike | str,
                          *,
@@ -98,10 +66,10 @@ def load_and_label_atlas(atlas_path: os.PathLike | str,
                            "7Networks_NA_Background_0").astype(str)
     if anatomical:
         # Extract the anatomical labels from the end of the label string
-        network_labels = np.array([l.split('_')[3] if not l.split('_')[3].isdigit() else l.split('_')[2] for l in all_labels])
+        network_labels = np.array([label.split('_')[3] if not label.split('_')[3].isdigit() else label.split('_')[2] for label in all_labels])
     else:
         # Extact the functional labels from the label string
-        network_labels = np.array([l.split('_')[2] for l in all_labels])
+        network_labels = np.array([label.split('_')[2] for label in all_labels])
 
     masker = NiftiLabelsMasker(
         labels_img=atlas_path,
@@ -447,5 +415,3 @@ def plot_diagnostics(model, loader, config, out_dir):
     # )
 
     # plot_residual_psd(group_res_true, group_res_pred, "group", out_dir=str(out_dir), fs=1/1.49)
-
-    # (W&B logging of images is now done directly in each plot_… function.)

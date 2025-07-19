@@ -30,6 +30,7 @@ members = ["algonauts/features/BEATs-Feature-Extraction"]
 [dependency-groups]
 dev = [
     "pytest>=8.4.0",
+    "ruff>=0.12.4",
 ]
 
 [project.scripts]

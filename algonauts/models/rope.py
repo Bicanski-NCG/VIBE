@@ -115,8 +115,6 @@ class PredictionTransformerRoPE(nn.Module):
         attn_mask : [batch, seq_len] – **True for real tokens, False for pads**
         """
         key_padding_mask = ~attn_mask          # True = PAD (matches our attention fn)
-        seq_len = x.size(1)
-        device = x.device
         # causal = torch.triu(
         #     torch.ones(seq_len, seq_len, device=device, dtype=torch.bool), 1
         # )

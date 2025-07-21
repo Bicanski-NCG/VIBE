@@ -45,7 +45,7 @@ import os
 
 import torch
 import torch.nn.functional as F
-from scipy.ndimage import maximum_filter, gaussian_filter
+from scipy.ndimage import maximum_filter
 
 from gabor import stream_clips  # reuse existing video decoding helper
 

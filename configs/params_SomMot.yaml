@@ -50,7 +50,7 @@ yeo_networks: 17
 # Probability of dropping entire modality
 modality_dropout_prob: 0.0
 # Replace dropped modality by zeros ('zeros') or gaussian ('gaussian')
-modality_dropout_mode: gaussian
+modality_dropout_mode: zeros
 # ------------- Data -------------
 
 # Augment data with training noise. Set to 0.0 to disable
@@ -79,8 +79,7 @@ val_run: "all"
 filter_name: [] #["figures", "life03", "life04", "life05"]
 
 loss_masks_path: null # "./loss_masks.pt" 
-target_networks: ["Vis", "Default", "SomMot", "Cont", "SalVentAttn", "Limbic", "DorsAttn"]
-save_rois: false
+target_networks: ["SomMot"]
 
 # Performance settings
 num_workers: 8

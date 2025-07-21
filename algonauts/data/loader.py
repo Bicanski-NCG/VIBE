@@ -33,7 +33,8 @@ def get_train_val_loaders(config, use_wandb=True):
 
     if config.filter_name is not None:
         #filter_fn = lambda sample: sample["name"] not in config.filter_name
-        filter_fn = lambda sample: all([filter_key not in sample["dataset_name"] for filter_key in config.filter_name])
+        def filter_fn(sample):
+            return all([filter_key not in sample["dataset_name"] for filter_key in config.filter_name])
 
         ds = ds.filter_samples(filter_fn)
     
@@ -124,7 +125,8 @@ def get_full_loader(config):
 
        # filter_fn = lambda sample: sample["name"] not in config.filter_name
 
-        filter_fn = lambda sample: all([filter_key not in sample["dataset_name"] for filter_key in config.filter_name])
+        def filter_fn(sample):
+            return all([filter_key not in sample["dataset_name"] for filter_key in config.filter_name])
 
 
         ds_full = ds_full.filter_samples(filter_fn)

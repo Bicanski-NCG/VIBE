@@ -13,7 +13,6 @@
 # limitations under the License. 
 import gradio as gr
 
-import numpy as np
 import os
 import torch
 
@@ -62,7 +61,7 @@ def infer_video_depth(
 def construct_demo():
     with gr.Blocks(analytics_enabled=False) as demo:
         gr.Markdown(
-            f"""
+            """
             blablabla
             """
         )

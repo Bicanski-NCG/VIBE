@@ -29,7 +29,7 @@ def load_initial_state(model, path="initial_model.pt", random_path="initial_rand
         torch.cuda.set_rng_state_all(random_state["cuda"])
 
 
-def load_model_from_ckpt(model_ckpt_path, params_path):
+def load_model_from_ckpt(model_ckpt_path, params_path,device = None):
     """
     Rebuild an FMRIModel from a saved state-dict and the YAML parameters file.
 
@@ -56,7 +56,8 @@ def load_model_from_ckpt(model_ckpt_path, params_path):
     # Modalities list contains the order of modalities in the model.
     modality_order = config.modalities
     config.input_dims = {modality: config.input_dims[modality] for modality in modality_order if modality in config.input_dims}
-
+    if device:
+        config.device = device
     model  = build_model(config)
     state  = torch.load(model_ckpt_path)
     model.load_state_dict(state)

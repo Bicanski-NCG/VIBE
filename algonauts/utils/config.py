@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Dict, Optional
 
 @dataclass
@@ -84,7 +84,8 @@ class Config:
     pct_bads: float = 0.1
     max_scatter_points: int = 50000
     yeo_networks: int = 7
-    
+    save_rois: bool = False
+    target_networks: List[str] = None
     loss_masks_path: str = None
 
     
@@ -117,7 +118,7 @@ class Config:
         Config
             A Config object populated with the parameters from the YAML files.
         """
-        import yaml, random
+        import yaml
 
         # load features.yaml
         with open(features_path, "r") as f:

@@ -1,5 +1,6 @@
 from pathlib import Path
-import argparse, torch
+import argparse
+import torch
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

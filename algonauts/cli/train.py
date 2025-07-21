@@ -4,7 +4,7 @@ import wandb
 from pathlib import Path
 import os
 import torch
-from torch.profiler import profile, record_function, ProfilerActivity
+from torch.profiler import profile, ProfilerActivity
 
 from algonauts.data import get_train_val_loaders
 from algonauts.models import save_initial_state, build_model
@@ -175,7 +175,7 @@ def main(args=None):
         with logger.step("📊 Generating validation diagnostics..."):
             out_dir = ckpt_dir / "val_diagnostics"
             plot_diagnostics(model, valid_loader, config, out_dir)
-        with logger.step(f"🔹 Running feature analyses on validation set..."):
+        with logger.step("🔹 Running feature analyses on validation set..."):
             run_feature_analyses(model, valid_loader, config.device)
 
     # -------------------- FINISH --------------------

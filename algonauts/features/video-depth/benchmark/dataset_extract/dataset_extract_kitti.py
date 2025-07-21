@@ -1,16 +1,7 @@
 import os
-import numpy as np
 import os.path as osp
-from PIL import Image
 from tqdm import tqdm
-import csv
-import cv2
-import json
-import glob
-import shutil
-from natsort import natsorted
 
-from eval_utils import even_or_odd
 from eval_utils import gen_json, get_sorted_files, copy_crop_files
 
 def extract_kitti(

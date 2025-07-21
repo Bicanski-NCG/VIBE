@@ -1,7 +1,9 @@
 from __future__ import annotations
 from pathlib import Path
 from tqdm import tqdm
-import time, argparse, os
+import time
+import argparse
+import os
 from functools import lru_cache
 from typing import List
 

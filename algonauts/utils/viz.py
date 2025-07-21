@@ -5,6 +5,7 @@ import pickle
 from pathlib import Path
 from typing import Literal
 import matplotlib.pyplot as plt
+import seaborn as sns
 import numpy as np
 from nilearn import plotting
 from nilearn.maskers import NiftiLabelsMasker
@@ -147,6 +148,68 @@ def plot_glass_brain(r: np.ndarray,
     name = f"{filename or 'glass_brain'}_{subj_id}.png"
     path = out_dir / name
     plt.savefig(path, dpi=150, bbox_inches='tight')
+    disp.close()
+    _wandb_log_image(path)
+    return path
+
+def plot_voxel_contributions(
+    contrib: np.ndarray,
+    masker,
+    *,
+    out_dir: os.PathLike | str = "plots",
+    filename: str | None = None,
+    cmap=None,
+    neg_color: str = "#2166ac",   # blue (used when data contain negatives)
+    pos_color: str = "#b2182b",   # red
+    zero_color: str = "white",
+    vmin: float | None = None,
+    vmax: float | None = None,
+    title: str | None = None,
+    colorbar_label: str = "Contribution",
+) -> Path:
+    out_dir = ensure_dir(out_dir)
+    contrib = np.asarray(contrib)
+
+    if vmax is None:
+        vmax = np.nanmax(contrib)
+    if vmin is None:
+        vmin = np.nanmin(contrib)
+
+    # Build cmap if not provided
+    if cmap is None:
+        if vmin < 0 < vmax:  # signed data
+            cmap = sns.blend_palette((neg_color, zero_color, pos_color), as_cmap=True)
+            sym_cbar = True
+        else:  # nonnegative data
+            # sequential white→pos_color
+            cmap = sns.blend_palette((zero_color, pos_color), as_cmap=True)
+            sym_cbar = False
+    else:
+        # trust user-supplied cmap; infer whether to symmetrize
+        sym_cbar = (vmin < 0 < vmax)
+
+    nii = masker.inverse_transform(contrib)
+
+    if title is None:
+        title = "Voxel contributions (white=0)"
+
+    disp = plotting.plot_glass_brain(
+        nii,
+        display_mode="lyrz",
+        cmap=cmap,
+        symmetric_cbar=sym_cbar,
+        plot_abs=False,
+        colorbar=True,
+        vmin=vmin,
+        vmax=vmax,
+        title=title,
+    )
+    cbar = disp._cbar
+    cbar.set_label(colorbar_label, rotation=90, labelpad=12, fontsize=12)
+
+    name = f"{filename or 'voxel_contrib'}.pdf"
+    path = Path(out_dir) / name
+    plt.savefig(path, dpi=600, bbox_inches="tight")
     disp.close()
     _wandb_log_image(path)
     return path

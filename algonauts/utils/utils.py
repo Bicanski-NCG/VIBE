@@ -95,8 +95,10 @@ def collect_predictions(loader, model, device):
 
 def evaluate_corr(model,
                   loader,
+                  lesioned_modalities: list | None = None,
                   *,
                   device: str | torch.device = "cpu",
+                  max_batches: int = -1,
                   preprocess=None) -> np.ndarray:
     """
     Voxel-wise Pearson r on *loader* using the same masking logic as
@@ -115,17 +117,36 @@ def evaluate_corr(model,
     """
     model.eval()
     pred_chunks, true_chunks = [], []
+    lesioned_modalities = lesioned_modalities if lesioned_modalities is not None else []
 
     with torch.no_grad():
-        for batch in loader:
+        for i, batch in enumerate(loader):
+            if max_batches == i:
+                break
             if preprocess is not None:
                 preprocess(batch)
 
             # --- move tensors ---
             attn = batch["attention_masks"].to(device, non_blocking=True)   # (B,T)
             fmri = batch["fmri"].to(device, non_blocking=True)              # (B,T,V)
-            feats = {k: batch[k].to(device, non_blocking=True)
-                     for k in loader.dataset.modalities}
+
+            feats = {}
+            for modality in loader.dataset.modalities:
+                if modality not in lesioned_modalities:
+                    feats[modality] = batch[modality].to(device, non_blocking=True)
+                    continue
+                X = torch.randn_like(batch[modality])
+                if loader.dataset.normalization_stats is not None:
+                    mean = loader.dataset.normalization_stats[modality]['mean']
+                    std = loader.dataset.normalization_stats[modality]['std']
+                else:
+                    mean = batch[modality].mean(dim=0, keepdim=True)
+                    std = batch[modality].std(dim=0, keepdim=True)
+                    if std.sum() == 0:
+                        std = torch.ones_like(std)
+                data = mean + std*X
+                feats[modality] = data.to(device, non_blocking=True)
+
             subj = batch["subject_ids"]
             run  = batch["run_ids"]
 

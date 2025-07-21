@@ -7,7 +7,7 @@ from algonauts.data import FMRI_Dataset, split_dataset_by_name, collate_fn, make
 from algonauts.utils import logger
 
 
-def get_train_val_loaders(config):
+def get_train_val_loaders(config, use_wandb=True):
     """Return train and validation DataLoaders."""
     # Assume normalization stats have been precomputed
     norm_stats = None # Outcommented to enforce recomputation torch.load("normalization_stats.pt")
@@ -89,11 +89,12 @@ def get_train_val_loaders(config):
     )
 
     # Log dataset sizes to W&B for quick dashboard reference
-    wandb.log({
-        "dataset/train_samples": len(train_ds),
-        "dataset/val_samples": len(valid_ds),
-        "dataset/full_samples": len(ds),
-    }, commit=False)
+    if use_wandb:
+        wandb.log({
+            "dataset/train_samples": len(train_ds),
+            "dataset/val_samples": len(valid_ds),
+            "dataset/full_samples": len(ds),
+        }, commit=False)
     return train_loader, valid_loader
 
 

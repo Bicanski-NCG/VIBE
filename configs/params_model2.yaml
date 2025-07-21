@@ -76,10 +76,11 @@ val_name: "s06"
 val_run: "all"
 
 # Filter dataset of samples with label e.g. to filter out samples with name "life" or "hidden" use ["life", "figures"]
-filter_name: [] #["figures", "life03", "life04", "life05"]
+filter_name: [] # ["figures", "life03", "life04", "life05"] # ["figures", "life03", "life04", "life05"]
 
 loss_masks_path: null # "./loss_masks.pt" 
-target_networks: ["SomMot"]
+target_networks: ["Vis", "Default", "SomMot", "Cont", "SalVentAttn", "Limbic", "DorsAttn"]
+save_rois: false
 
 # Performance settings
 num_workers: 8
@@ -96,7 +97,7 @@ output_dim: 1000
 mask_prob: 0.2
 
 # Fusion transformer hyperparameters
-fusion_hidden_dim: 256
+fusion_hidden_dim: 200
 fuse_mode: "concat"
 fusion_layers: 1
 fusion_heads: 4

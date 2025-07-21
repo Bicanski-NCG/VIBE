@@ -37,13 +37,13 @@ features:
   labse_pool_l8_10: "Text/labse_pre0_post0_tr1.49/pool_l8_10"
 
 input_dims:
-  aud_last: 2560
-  # aud_ln_post: 2560
+  #aud_last: 2560
+  aud_ln_post: 2560
   # conv3d_features: 2560
   # vis_block5: 2560
-  vis_block8: 2560
+  #vis_block8: 2560
   # vis_block12: 2560
-  vis_merged: 4096
+  #vis_merged: 4096
   # thinker_12: 4096
   thinker_24: 4096
   # thinker_36: 4096

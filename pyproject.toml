@@ -13,7 +13,7 @@ dependencies = [
     "matplotlib>=3.10.1",
     "msapy>=1.7.3",
     "nilearn>=0.10.4",
-    "numpy==2.3.1",
+    "numpy<2.0",
     "pyyaml>=6.0.2",
     "seaborn>=0.13.2",
     "torch>=2.6.0",
@@ -23,6 +23,9 @@ dependencies = [
 
 [tool.setuptools]
 packages = ["algonauts"]
+
+[tool.uv.sources]
+msapy = { git = "https://github.com/DanielCSchad/msa.git" }
 
 [dependency-groups]
 dev = [

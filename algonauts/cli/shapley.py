@@ -144,6 +144,7 @@ def main():
             n_permutations=args.num_permutations,
             elements=list(config.input_dims.keys()),
             objective_function=objective_function,
+            n_parallel_games=-1,
         )
 
     #shaples_modes = pd.read_csv("shap_ood1/shapley_2_permutations_None/shapley_modes.csv")

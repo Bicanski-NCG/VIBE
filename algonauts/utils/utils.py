@@ -138,8 +138,14 @@ def evaluate_corr(model,
                     feats[modality] = batch[modality].to(device, non_blocking=True)
                     continue
                 X = torch.randn_like(batch[modality])
-                mean = loader.dataset.normalization_stats[modality]['mean']
-                std = loader.dataset.normalization_stats[modality]['std']
+                if loader.dataset.normalization_stats is not None:
+                    mean = loader.dataset.normalization_stats[modality]['mean']
+                    std = loader.dataset.normalization_stats[modality]['std']
+                else:
+                    mean = batch[modality].mean(dim=0, keepdim=True)
+                    std = batch[modality].std(dim=0, keepdim=True)
+                    if std.sum() == 0:
+                        std = torch.ones_like(std)
                 data = mean + std*X
                 feats[modality] = data.to(device, non_blocking=True)
 

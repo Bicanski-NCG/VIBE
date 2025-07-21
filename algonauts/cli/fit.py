@@ -40,7 +40,10 @@ def main():
 
     features_dir = args.features_dir or os.getenv("FEATURES_DIR", "data/features")
     data_dir = args.data_dir or os.getenv("DATA_DIR", "data/raw/fmri")
-    output_dir = args.output_dir or os.getenv("OUTPUT_DIR", "data/outputs")
+    output_dir = args.output_dir or os.getenv("OUTPUT_DIR", "runs")
+
+    if args.name:
+        output_dir = os.path.join(output_dir, args.name)
 
     ensure_paths_exist(
         (features_dir, "features_dir"),

@@ -71,7 +71,7 @@ def get_network_adjacency_matrix(n_rois: int = 1000) -> np.ndarray:
     Binary ROI-adjacency matrix (shape n_rois × n_rois) where
         A_ij = 1  ⇔  ROI *i* and *j* belong to the same Yeo network.
     """
-    atlas = get_atlas(n_rois)
+    atlas = get_atlas(n_rois, yeo_networks=7)
 
     # network label is always the penultimate token: 'Yeo17_RH_Default_37'
     nets = np.array([lbl.decode("utf-8").split("_")[2] for lbl in atlas.labels],

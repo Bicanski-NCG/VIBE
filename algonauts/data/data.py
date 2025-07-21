@@ -1,15 +1,66 @@
+"""
+Dataset classes and helper utilities for the Algonauts fMRI‑decoding
+challenge.
+
+This module provides
+
+* `FMRI_Dataset` – a `torch.utils.data.Dataset` that streams BOLD
+  responses together with multiple stimulus‑feature modalities.
+* Helper functions to split datasets, compute normalisation
+  statistics, build sample‑weight vectors, and collate
+  variable‑length sequences.
+
+All public callables follow the NumPy/SciPy doc‑string convention.
+"""
+from __future__ import annotations
+
+import glob
 import os
 import re
-import glob
-import h5py
-import torch
-import numpy as np
-from torch.utils.data import Dataset, DataLoader
-from torch.nn.utils.rnn import pad_sequence
 import warnings
-from tqdm import tqdm 
+
+import h5py
+import numpy as np
+import torch
+from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
+
 
 class FMRI_Dataset(Dataset):
+    """
+    PyTorch ``Dataset`` that yields (subject_id, run_id,
+    features, BOLD, loss_mask, dataset_name).
+
+    Parameters
+    ----------
+    root_folder_fmri : str | os.PathLike
+        Root directory with ``sub-??/func/*.h5`` per subject.
+    feature_paths : dict[str, str]
+        Mapping modality → folder containing ``.npy``/``.pt`` files.
+    input_dims : dict[str, int]
+        Expected feature dimensionalities.
+    modalities : list[str]
+        Ordered list of modalities to return.
+    noise_std : float, default 0.0
+        σ of additive Gaussian noise on features.
+    normalization_stats : dict[str, dict[str, torch.Tensor]], optional
+        Per‑channel mean/std for normalisation or Gaussian dropout.
+    oversample_factor : int, default 1
+        If >1 repeats every sample this many times.
+    samples : list[dict], optional
+        Pre‑built sample definitions; inferred from disk if ``None``.
+    normalize_bold : bool, default False
+        Run‑wise z‑score of BOLD responses.
+    modality_dropout_mode : {'zeros', 'gaussian'}, default 'zeros'
+        Strategy for modality dropout.
+    modality_dropout_prob : float, default 0.1
+        Probability of dropping an entire modality.
+    normalize_features : bool, default False
+        Whether to z‑score features.
+    loss_masks_path : str, optional
+        ``.pt`` file with per‑voxel loss masks.
+    """
     def __init__(
         self,
         root_folder_fmri,
@@ -30,8 +81,6 @@ class FMRI_Dataset(Dataset):
 
         self.root_folder = root_folder_fmri
         self.feature_paths = feature_paths  # Dict of {modality: path}
-
-        
 
         self.input_dims = input_dims
         self.modalities = modalities
@@ -59,18 +108,10 @@ class FMRI_Dataset(Dataset):
                         normalization_stats_valid = False
                         break
 
-
-
             if not normalization_stats_valid:
                 warnings.warn('No valid normalization stats provided. Will compute normalization stats and save in current directory. This might take a while.')
                 normalization_stats = compute_statistics(feature_paths)
                 torch.save(normalization_stats,fname)
-
-
-
-
-
-
 
         self.normalization_stats = normalization_stats
 
@@ -161,10 +202,21 @@ class FMRI_Dataset(Dataset):
                 )
 
     def normalize(self, data, mean, std):
-    
         return (data - mean) / std
-    
+
     def _get_h5(self, path):
+        """
+        Open an HDF5 file in SWMR mode, cache the handle, and return it.
+
+        Parameters
+        ----------
+        path : str
+            Path to the ``.h5`` file.
+
+        Returns
+        -------
+        h5py.File
+        """
         handle = self._h5_cache.get(path, None)
         if handle is None:
             handle = h5py.File(path, "r", libver='latest', swmr=True)
@@ -172,8 +224,16 @@ class FMRI_Dataset(Dataset):
                 raise FileNotFoundError(f"Could not open HDF5 file: {path}")
             self._h5_cache[path] = handle
         return handle
-    
+
     def _get_feature(self, path):
+        """
+        Load a ``.npy`` or ``.pt`` feature file as ``torch.float32``.
+
+        Raises
+        ------
+        ValueError
+            If the extension is unsupported or the file is corrupted.
+        """
         if path.endswith(".npy"):
             try:
                 arr = np.load(path, mmap_mode='r')
@@ -187,17 +247,18 @@ class FMRI_Dataset(Dataset):
                 raise ValueError(f"Corrupted feature file: {path}")
         else:
             raise ValueError(f"Unknown feature file extension: {path}")
-    
-    def get_loss_mask(self,dataset_name,subject_id,fmri_file):
-        if self.loss_masks:
 
+    def get_loss_mask(self,dataset_name,subject_id,fmri_file):
+        """
+        Return voxel‑level loss mask, defaulting to all‑ones tensor.
+        """
+        if self.loss_masks:
             loss_mask = self.loss_masks.get((subject_id,dataset_name),None)
         else:
             loss_mask =None
 
         if loss_mask is None:
             loss_mask = torch.ones_like(fmri_file)
-       
         return loss_mask
 
     def __getitem__(self, idx):
@@ -267,11 +328,6 @@ class FMRI_Dataset(Dataset):
                         std = self.normalization_stats[modality]['std']
                         data = mean + std*X
 
-
-
-
-
-
             if (self.normalize_features and self.normalization_stats 
                 and self.normalization_stats.get(modality)
                   and self.normalization_stats.get(modality).get('mean') ):
@@ -296,9 +352,15 @@ class FMRI_Dataset(Dataset):
         loss_mask = self.get_loss_mask(dataset_name,subject_id,fmri_response_tensor)
 
         return subject_id, run_id, features, fmri_response_tensor,loss_mask, dataset_name
-
-
 def compute_mean_std(dataset):
+    """
+    Compute per‑modality mean and std across the dataset.
+
+    Returns
+    -------
+    dict[str, torch.Tensor]
+        Keys: ``'<modality>_mean'`` and ``'<modality>_std'``.
+    """
     sums = {key: [] for key in dataset.feature_paths}
     for _, features, _ in DataLoader(dataset, batch_size=1):
         for modality, feat in features.items():
@@ -314,30 +376,8 @@ def compute_mean_std(dataset):
 def split_dataset_by_name(dataset, val_name="06", val_run="all",
                           train_noise_std=0.00, normalize_validation_bold=False):
     """
-    Splits the dataset into training and validation sets based on the `val_name` and `val_run` parameters.
-    If `val_name` is found in the sample name, it is considered a validation sample.
-    If `val_run` is specified, only validation samples from that run will be included.
-    If `val_run` is "all", no filtering is applied.
-
-    Parameters
-    ----------
-    dataset : FMRI_Dataset
-        The dataset to split.
-    val_name : str
-        The substring to match for validation samples. Default is "06".
-    train_noise_std : float
-        Standard deviation of noise to add to training samples. Default is 0.00.
-    normalize_validation_bold : bool
-        Whether to normalize BOLD responses in the validation set. Default is False.
-    filter_run : str
-        If specified, will filter validation samples by this run name.
-        If "all", no filtering is applied. Default is "all".
-    Returns
-    -------
-    train_ds : FMRI_Dataset
-        The training dataset.
-    val_ds : FMRI_Dataset
-        The validation dataset.
+    Split `dataset` into train/validation by substring match on
+    ``sample['name']``.  See source for details.
     """
     train_samples, val_samples = [], []
 
@@ -381,6 +421,9 @@ def split_dataset_by_name(dataset, val_name="06", val_run="all",
 
 
 def collate_fn(batch):
+    """
+    Collate variable‑length samples into a padded mini‑batch.
+    """
     subject_ids, run_ids, features_list, fmri_responses,loss_mask,dataset_name = zip(*batch)
 
     all_modalities = features_list[0].keys()
@@ -498,18 +541,22 @@ def make_group_weights(dataset, filter_on: str):
     return weights
 
 
+def compute_statistics(feature_paths, cov_univariate=True, include_ood=False):
+    """
+    Compute running mean and (co)variance for each modality using
+    Welford’s algorithm.
 
-
-def compute_statistics(feature_paths, cov_univariate=True,include_ood = False):
-
+    Returns
+    -------
+    dict[str, dict[str, torch.Tensor]]
+        ``{'modality': {'mean': μ, 'std': σ}}``.
+    """
     normalization_stats = {}
 
     for feature, path in tqdm(feature_paths.items()):
-        #path = os.path.join(config.features_dir,path)
-        #print(path)
-        M = 0
+        n_seen = 0
         mean = None
-        M2 = None  # For Welford's algorithm to compute variance/covariance
+        ssq = None  # For Welford's algorithm to compute variance/covariance
 
         for root, _, files in os.walk(path):
             for file in tqdm(files):
@@ -527,61 +574,54 @@ def compute_statistics(feature_paths, cov_univariate=True,include_ood = False):
 
                 N = data.shape[-2]
 
-                if M == 0:
+                if n_seen == 0:
                     mean = torch.mean(data, dim=-2)
                     if cov_univariate:
-                        M2 = torch.sum((data - mean.unsqueeze(-2))**2, dim=-2)
+                        ssq = torch.sum((data - mean.unsqueeze(-2))**2, dim=-2)
                     else:
                         centered_data = data - mean.unsqueeze(-2)
-                        M2 = torch.matmul(centered_data.transpose(-1, -2), centered_data)
+                        ssq = torch.matmul(centered_data.transpose(-1, -2), centered_data)
                 else:
                     mean.clone()
-                    mean, M2_new_contribution = increment_mean_and_M2(data, mean, M, cov_univariate)
-                    M2 += M2_new_contribution
+                    mean, ssq_new = increment_mean_and_M2(data, mean, n_seen, cov_univariate)
+                    ssq += ssq_new
 
-                M += N
+                n_seen += N
 
-        if M > 0:
+        if n_seen > 0:
             if cov_univariate:
-                std = torch.sqrt(M2 / (M-1))
+                std = torch.sqrt(ssq / (n_seen-1))
             else:
-                # For covariance, M2 is already the sum of outer products of centered data
-                # We need to divide by M-1 for sample covariance, or M for population covariance.
-                # Assuming sample covariance for 'state-of-the-art' for statistical purposes.
-                # If M=1, covariance is undefined, so handle that case.
-                if M > 1:
-                    std = M2 / (M - 1)
+                if n_seen > 1:
+                    std = ssq / (n_seen - 1)
                 else:
-                    std = torch.zeros_like(M2) # Or raise an error, depending on desired behavior
-        
+                    std = torch.zeros_like(ssq)
             normalization_stats[feature] = {"mean": mean, "std": std}
 
     return normalization_stats
 
-def increment_mean_and_M2(data, mean, M, cov_univariate):
-    N = data.shape[-2]
-    
-    # Current mean of the new batch
-    batch_mean = torch.mean(data, dim=-2)
 
-    # Calculate new combined mean
-    new_mean = (M * mean + N * batch_mean) / (M + N)
+def increment_mean_and_M2(data, mean, n_prev, cov_univariate):
+    """
+    Update running mean and second moment with a new data batch.
+
+    Returns
+    -------
+    tuple[torch.Tensor, torch.Tensor]
+        Updated mean and contribution to the sum of squares.
+    """
+    N = data.shape[-2]
+    batch_mean = torch.mean(data, dim=-2)
+    new_mean = (n_prev * mean + N * batch_mean) / (n_prev + N)
 
     if cov_univariate:
-        # Update M2 (sum of squared differences) using a stable formula
         delta = batch_mean - mean
-        M2_new_contribution = torch.sum((data - batch_mean.unsqueeze(-2))**2, dim=-2)
-        M2_new_contribution += M * N * delta**2 / (M + N)
+        ssq_contrib = torch.sum((data - batch_mean.unsqueeze(-2))**2, dim=-2)
+        ssq_contrib += n_prev * N * delta**2 / (n_prev + N)
     else:
-        # Update M2 (sum of outer products of centered data) for covariance
-        # M2_B (sum of outer products for the new batch relative to its own mean)
         centered_data_batch = data - batch_mean.unsqueeze(-2)
-        M2_new_batch = torch.matmul(centered_data_batch.transpose(-1, -2), centered_data_batch)
-
-        # Correction term for combining M2 values
-        # delta between old mean and new batch mean
+        ssq_new_batch = torch.matmul(centered_data_batch.transpose(-1, -2), centered_data_batch)
         delta_mean = batch_mean - mean
-        
-        M2_new_contribution = M2_new_batch + (M * N / (M + N)) * torch.outer(delta_mean, delta_mean)
+        ssq_contrib = ssq_new_batch + (n_prev * N / (n_prev + N)) * torch.outer(delta_mean, delta_mean)
 
-    return new_mean, M2_new_contribution
+    return new_mean, ssq_contrib

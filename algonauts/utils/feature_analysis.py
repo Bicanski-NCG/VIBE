@@ -151,7 +151,7 @@ def shapley_captum(model, val_loader, device, modalities,
 def feature_single_ablation(model, val_loader, device, base_r):
     """Leave‑one‑block Δr; returns delta_dict."""
     delta_dict = {}
-    for name, proj in model.encoder.projections.items():
+    for name, proj in model.projector.projections.items():
         W0, b0 = proj[0].weight.data.clone(), proj[0].bias.data.clone()
         proj[0].weight.zero_()
         proj[0].bias.zero_()
@@ -182,17 +182,17 @@ def feature_pairwise_redundancy(model, val_loader, device, base_r, delta_dict, b
     for i in range(n):
         for j in range(i+1,n):
             bi,bj=blocks[i],blocks[j]
-            Wi,bi_b = model.encoder.projections[bi][0].weight.data.clone(), model.encoder.projections[bi][0].bias.data.clone()
-            Wj,bj_b = model.encoder.projections[bj][0].weight.data.clone(), model.encoder.projections[bj][0].bias.data.clone()
-            model.encoder.projections[bi][0].weight.zero_()
-            model.encoder.projections[bi][0].bias.zero_()
-            model.encoder.projections[bj][0].weight.zero_()
-            model.encoder.projections[bj][0].bias.zero_()
+            Wi,bi_b = model.projector.projections[bi][0].weight.data.clone(), model.projector.projections[bi][0].bias.data.clone()
+            Wj,bj_b = model.projector.projections[bj][0].weight.data.clone(), model.projector.projections[bj][0].bias.data.clone()
+            model.projector.projections[bi][0].weight.zero_()
+            model.projector.projections[bi][0].bias.zero_()
+            model.projector.projections[bj][0].weight.zero_()
+            model.projector.projections[bj][0].bias.zero_()
             r_joint = evaluate_corr(model,val_loader,device=device).mean().item()-base_r
-            model.encoder.projections[bi][0].weight.copy_(Wi)
-            model.encoder.projections[bi][0].bias.copy_(bi_b)
-            model.encoder.projections[bj][0].weight.copy_(Wj)
-            model.encoder.projections[bj][0].bias.copy_(bj_b)
+            model.projector.projections[bi][0].weight.copy_(Wi)
+            model.projector.projections[bi][0].bias.copy_(bi_b)
+            model.projector.projections[bj][0].weight.copy_(Wj)
+            model.projector.projections[bj][0].bias.copy_(bj_b)
             red[i,j]=red[j,i]=r_joint-(delta_dict[bi]+delta_dict[bj])
     fig,ax=plt.subplots(figsize=(6,5))
     sns.heatmap(red.numpy(),ax=ax,xticklabels=blocks,yticklabels=blocks,square=True,cmap="rocket")
@@ -250,7 +250,7 @@ def run_feature_analyses(model, val_loader, device):
     """
     model.eval().requires_grad_(False)
 
-    blocks = list(model.encoder.projections.keys())
+    blocks = list(model.projector.projections.keys())
     EXACT_CUTOFF = 6
 
     # ---------- baseline ----------------------------------------------

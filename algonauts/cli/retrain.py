@@ -40,7 +40,7 @@ def main(args=None, run_id=None, n_epochs=None):
         raise ValueError("Please provide a checkpoint to load.")
 
 
-    output_dir = Path(args.output_dir or os.getenv("OUTPUT_DIR", "data/outputs"))
+    output_dir = Path(args.output_dir or os.getenv("OUTPUT_DIR", "runs"))
     ckpt_dir = output_dir / 'checkpoints' / checkpoint
     model_path = ckpt_dir / "initial_model.pt"
     params_path = ckpt_dir / "config.yaml"

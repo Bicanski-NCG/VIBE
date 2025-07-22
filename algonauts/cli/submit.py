@@ -9,6 +9,7 @@ import zipfile
 from algonauts.models import load_model_from_ckpt
 from algonauts.models.ensemble import ROIAdaptiveEnsemble
 from algonauts.utils import ensure_paths_exist
+from algonauts.utils import logger
 
 
 def normalize_feature(x, mean, std):
@@ -89,14 +90,14 @@ def predict_fmri_for_test_set(
         for clip in sample_counts.keys():
             if not any([ood in clip for ood in test_names]):
                 continue
-            print(f"→  Processing {subj} - {clip}", flush=True)
+            logger.info(f"→  Processing {subj} - {clip}")
             n_samples = sample_counts[clip]
             try:
                 features = load_features_for_episode(
                     clip, feature_paths, normalization_stats
                 )
             except FileNotFoundError as e:
-                print(f"Skipping {clip}: {e}", flush=True)
+                logger.warning(f"Skipping {clip}: {e}")
                 continue
 
             for key in features:
@@ -121,8 +122,11 @@ def predict_fmri_for_test_set(
 
 def main():
     parser = argparse.ArgumentParser(description="Make submission for fMRI predictions")
-    parser.add_argument("--checkpoint", type=str, nargs="+", required=True,
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--checkpoint", type=str, nargs="+", default=None,
                         help="Checkpoint(s) to load, single or multiple for ensemble averaging")
+    group.add_argument("--checkpoint_dir", type=str, default=None,
+                        help="Directory containing the checkpoint(s) to load")
     parser.add_argument("--name", type=str, default=None, help="Name of output file")
     parser.add_argument("--output_dir", default=None, type=str,
                         help="Root directory for outputs & checkpoints (default $OUTPUT_DIR or data/outputs)")
@@ -131,6 +135,12 @@ def main():
     parser.add_argument("--test_names", type=str, default=None, nargs="+",
                         help="Name of dataset for which to make predictions")
     args = parser.parse_args()
+
+    if args.checkpoint_dir:
+        logger.info(f"Loading checkpoints from directory: {args.checkpoint_dir}")
+        args.checkpoint = [os.path.basename(d) for d in glob.glob(os.path.join(args.checkpoint_dir, "final_model.pt"))]
+        if not args.checkpoint:
+            raise FileNotFoundError(f"No checkpoints found in {args.checkpoint_dir}")
 
     if args.name is None:
         name = "submission"
@@ -146,7 +156,7 @@ def main():
     # Attach checkpoint(s) to submission name
     name = f"{name}_ensemble" if len(args.checkpoint) > 1 else f"{name}_{args.checkpoint[0]}"
 
-    print(f"Using checkpoint(s): {args.checkpoint}", flush=True)
+    logger.info(f"Using checkpoint(s): {args.checkpoint}")
 
     output_root = Path(args.output_dir or os.getenv("OUTPUT_DIR", "data/outputs"))
     submission_dir = output_root / "submissions"
@@ -187,44 +197,44 @@ def main():
     predictions_sum = None
 
     for i, chk in enumerate(checkpoint_list):
-        print(f"→ Loading and predicting with checkpoint ({i+1}/{len(checkpoint_list)}): {chk}", flush=True)
-        ckpt_dir = output_root / "checkpoints" / chk
-        # Load model (with optional ROI ensemble wrapper)
-        model_instance, _ = load_model_from_ckpt(
-            model_ckpt_path=str(ckpt_dir / "final_model.pt"),
-            params_path=str(ckpt_dir / "config.yaml"),
-        )
-        if args.roi_ensemble:
-            roi_labels = torch.load(ckpt_dir / "roi_names.pt", weights_only=False)
-            roi_to_epoch = torch.load(ckpt_dir / "roi_to_epoch.pt", weights_only=False)
-            model_instance = ROIAdaptiveEnsemble(
-                roi_labels=roi_labels,
-                roi_to_epoch=roi_to_epoch,
-                ckpt_dir=ckpt_dir,
+        with logger.step(f"Loading and predicting with checkpoint ({i+1}/{len(checkpoint_list)}): {chk}"):
+            ckpt_dir = output_root / "checkpoints" / chk
+            # Load model (with optional ROI ensemble wrapper)
+            model_instance, _ = load_model_from_ckpt(
+                model_ckpt_path=str(ckpt_dir / "final_model.pt"),
+                params_path=str(ckpt_dir / "config.yaml"),
+            )
+            if args.roi_ensemble:
+                roi_labels = torch.load(ckpt_dir / "roi_names.pt", weights_only=False)
+                roi_to_epoch = torch.load(ckpt_dir / "roi_to_epoch.pt", weights_only=False)
+                model_instance = ROIAdaptiveEnsemble(
+                    roi_labels=roi_labels,
+                    roi_to_epoch=roi_to_epoch,
+                    ckpt_dir=ckpt_dir,
+                    device=device,
+                )
+            model_instance.to(device).eval()
+            current_preds = predict_fmri_for_test_set(
+                model=model_instance,
+                feature_paths=feature_paths,
+                sample_counts_root=config.data_dir,
+                test_names=args.test_names,
+                normalization_stats=None,
                 device=device,
             )
-        model_instance.to(device).eval()
-        current_preds = predict_fmri_for_test_set(
-            model=model_instance,
-            feature_paths=feature_paths,
-            sample_counts_root=config.data_dir,
-            test_names=args.test_names,
-            normalization_stats=None,
-            device=device,
-        )
-        if predictions_sum is None:
-            # Deep copy first model's predictions
-            predictions_sum = {
-                subj: {clip: pred.copy() for clip, pred in clips.items()}
-                for subj, clips in current_preds.items()
-            }
-        else:
-            for subj, clips in current_preds.items():
-                for clip, pred in clips.items():
-                    predictions_sum[subj][clip] += pred
-        # Clean up GPU memory
-        del model_instance
-        torch.cuda.empty_cache()
+            if predictions_sum is None:
+                # Deep copy first model's predictions
+                predictions_sum = {
+                    subj: {clip: pred.copy() for clip, pred in clips.items()}
+                    for subj, clips in current_preds.items()
+                }
+            else:
+                for subj, clips in current_preds.items():
+                    for clip, pred in clips.items():
+                        predictions_sum[subj][clip] += pred
+            # Clean up GPU memory
+            del model_instance
+            torch.cuda.empty_cache()
 
     # Average predictions across models
     for subj, clips in predictions_sum.items():
@@ -242,7 +252,7 @@ def main():
             if not np.issubdtype(pred.dtype, np.floating):
                 raise ValueError(f"Prediction for {subj} - {clip} should be a float array, got {pred.dtype}.")
             if not pred.dtype == np.float32:
-                print("Warning: Prediction for {subj} - {clip} is not float32, it is {pred.dtype}.", flush=True)
+                print("Warning: Prediction for {subj} - {clip} is not float32, it is {pred.dtype}.")
             if not np.isfinite(pred).all():
                 raise ValueError(f"Prediction for {subj} - {clip} contains non-finite values.")
 
@@ -254,7 +264,7 @@ def main():
     zip_file = submission_dir / f"{name}.zip"
     with zipfile.ZipFile(zip_file, "w") as zipf:
         zipf.write(output_file, f"{name}.npy")
-    print(f"Saved predictions to {zip_file}", flush=True)
+    logger.info(f"Saved predictions to {zip_file}")
 
 if __name__ == "__main__":
     main()

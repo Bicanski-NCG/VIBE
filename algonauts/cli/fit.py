@@ -38,25 +38,25 @@ def main():
                     help="Enable PyTorch profiling and export trace to output_dir/checkpoints/<run_id>/profiler_trace.json")
     args = parser.parse_known_args()[0]
 
-    features_dir = args.features_dir or os.getenv("FEATURES_DIR", "data/features")
-    data_dir = args.data_dir or os.getenv("DATA_DIR", "data/raw/fmri")
-    output_dir = args.output_dir or os.getenv("OUTPUT_DIR", "runs")
+    args.features_dir = args.features_dir or os.getenv("FEATURES_DIR", "data/features")
+    args.data_dir = args.data_dir or os.getenv("DATA_DIR", "data/raw/fmri")
+    args.output_dir = args.output_dir or os.getenv("OUTPUT_DIR", "runs")
 
     if args.name:
-        output_dir = os.path.join(output_dir, args.name)
+        args.output_dir = os.path.join(args.output_dir, args.name)
 
     ensure_paths_exist(
-        (features_dir, "features_dir"),
-        (data_dir,     "data_dir"),
+        (args.features_dir, "features_dir"),
+        (args.data_dir,     "data_dir"),
     )
 
     try:
         ensure_paths_exist(
-            (output_dir,   "output_dir"),
+            (args.output_dir,   "output_dir"),
         )
     except FileNotFoundError:
         # create output_dir
-        os.mkdir(output_dir)
+        os.mkdir(args.output_dir)
 
     # Run the training command
     with logger.step("🚀 Starting training..."):

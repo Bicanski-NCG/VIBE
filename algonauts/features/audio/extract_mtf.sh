@@ -1,7 +1,7 @@
 #!/bin/bash -l
 # Standard output and error:
-#SBATCH -o data/outputs/job_logs/%x-%j.out
-#SBATCH -e data/outputs/job_logs/%x-%j.err
+#SBATCH -o runs/job_logs/%x-%j.out
+#SBATCH -e runs/job_logs/%x-%j.err
 # Initial working directory:
 #SBATCH -D /u/danielcs/algonauts/Algonauts-Decoding
 # Job name

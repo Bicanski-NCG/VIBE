@@ -1,9 +1,9 @@
 # merge_plan.yaml
-atlas: data/raw/fmri/sub-01/atlas/sub-01_space-MNI152NLin2009cAsym_atlas-Schaefer18_parcel-1000Par7Net_desc-dseg_parcellation.nii.gz # single reference for masks
-output_path: runs/s07_model_joined_noqwen.npy
+atlas: sub-01/atlas/sub-01_space-MNI152NLin2009cAsym_atlas-Schaefer18_parcel-1000Par7Net_desc-dseg_parcellation.nii.gz # single reference for masks
+output_path: s07_model_joined.npy
 
 merge:
-  base: "runs/model1/submissions/model1_s07_ensemble_45.npy"
+  base: "model1/submissions/model1_s07_ensemble.npy"
   networks:
-    Vis: "runs/model_visual/submissions/model_visual_s07_ensemble_711.npy"
-    Default: "runs/model_default/submissions/model_default_s07_ensemble_829.npy"
+    Vis: "model_visual/submissions/model_visual_s07_ensemble.npy"
+    Default: "model_default/submissions/model_default_s07_ensemble.npy"

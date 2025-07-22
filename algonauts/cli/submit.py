@@ -2,7 +2,6 @@ import argparse
 import os
 from pathlib import Path
 import glob
-import random
 import numpy as np
 import torch
 import zipfile
@@ -129,7 +128,7 @@ def main():
                         help="Directory containing the checkpoint(s) to load")
     parser.add_argument("--name", type=str, default=None, help="Name of output file")
     parser.add_argument("--output_dir", default=None, type=str,
-                        help="Root directory for outputs & checkpoints (default $OUTPUT_DIR or data/outputs)")
+                        help="Root directory for outputs & checkpoints (default $OUTPUT_DIR or runs)")
     parser.add_argument("--roi_ensemble", action="store_true",
                         help="Use ROIAdaptiveEnsemble to select best models per ROI")
     parser.add_argument("--test_names", type=str, default=None, nargs="+",
@@ -163,7 +162,7 @@ def main():
 
     logger.info(f"Using checkpoint(s): {args.checkpoint}")
 
-    output_root = Path(args.output_dir or os.getenv("OUTPUT_DIR", "data/outputs"))
+    output_root = Path(args.output_dir or os.getenv("OUTPUT_DIR", "runs"))
     submission_dir = output_root / "submissions"
     checkpoint_dir = output_root / "checkpoints" / args.checkpoint[0]
     final_model_path = checkpoint_dir / "final_model.pt" if checkpoint_dir else None
@@ -261,8 +260,8 @@ def main():
             if not np.isfinite(pred).all():
                 raise ValueError(f"Prediction for {subj} - {clip} contains non-finite values.")
 
-    random_number = random.randint(0, 1000)
-    name = f"{name}_{random_number}"
+    # random_number = random.randint(0, 1000)
+    # name = f"{name}_{random_number}"
     output_file = submission_dir / f"{name}.npy"
     np.save(output_file, predictions, allow_pickle=True)
 

@@ -8,7 +8,7 @@ YAML schema (exactly what the user asked for)
 atlas: /atlas/schaefer1000_7net.nii.gz   # required, NIfTI parcellation
 output_path: /out/path                   # where to write the merged .npy
 merge:
-  base: "data/outputs/ood_model_1_fixed/submissions/ensemble.npy"    # required
+  base: "runs/ood_model_1_fixed/submissions/ensemble.npy"    # required
   movies:                                                             # optional
     passepartout: "data/..._fr/submissions/ensemble.npy"
   networks:                                                           # optional
@@ -26,6 +26,7 @@ No subject‑level cherry‑picks; whatever subjects are inside the files get us
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from typing import Dict
@@ -57,35 +58,53 @@ def get_roi_masks(atlas_path: Path) -> Dict[str, np.ndarray]:
     return {roi: labels == roi for roi in labels}
 
 
+def resolve_path(p, root):
+    p = Path(p)
+    return p if p.is_absolute() else Path(root) / p
+
+
 # ------------------------------------------------------------------ #
 # main logic                                                         #
 # ------------------------------------------------------------------ #
-def merge_predictions(cfg_path: Path) -> None:
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Merge predictions with base → movie → ROI overrides")
+    parser.add_argument("-c", "--config", required=True, help="YAML file as described above")
+    parser.add_argument("--output_dir", type=str, default=os.getenv("OUTPUT_DIR", "runs"),
+                        help="Directory to save the merged output (default: runs)")
+    parser.add_argument("--data_dir", type=str, default=os.getenv("DATA_DIR", "data/raw/fmri"),
+                        help="Directory with raw fMRI data (default: data/raw/fmri)")
+    args = parser.parse_args()
+
+    cfg_file = Path(args.config).expanduser().resolve()
+    if not cfg_file.exists():
+        sys.exit(f"Config file not found: {cfg_file}")
+
     # ---- read YAML ------------------------------------------------ #
-    with cfg_path.open() as f:
+    with cfg_file.open() as f:
         cfg = yaml.safe_load(f)
 
     # minimal schema validation
     if "atlas" not in cfg or "merge" not in cfg or "base" not in cfg["merge"]:
         sys.exit("YAML must contain keys: atlas, merge.base")
 
-    atlas_path = Path(cfg["atlas"]).expanduser().resolve()
+    atlas_path = resolve_path(cfg["atlas"], args.data_dir).expanduser().resolve()
     if not atlas_path.exists():
         sys.exit(f"Atlas file not found: {atlas_path}")
 
-    output_path = Path(cfg.get("output_path", cfg_path.with_suffix(".zip"))).expanduser().resolve()
+    output_path = resolve_path(cfg.get("output_path", cfg_file.with_suffix(".zip")), args.output_dir).expanduser().resolve()
 
     masks = get_roi_masks(atlas_path)
 
     cache: Dict[str, dict] = {}
 
     # ---- 1. load base -------------------------------------------- #
-    base_path = Path(cfg["merge"]["base"])
+    base_path = resolve_path(cfg["merge"]["base"], args.output_dir).expanduser().resolve()
     merged = load_submission(base_path, cache)  # dict {subject: {clip: array}}
 
     # ---- 2. movie‑level overrides -------------------------------- #
     for movie, path in (cfg["merge"].get("movies") or {}).items():
-        sub_dict = load_submission(Path(path), cache)
+        path = resolve_path(path, args.output_dir).expanduser().resolve()
+        sub_dict = load_submission(path, cache)
         for subj, clips in sub_dict.items():
             for clip_name, arr in clips.items():
                 if movie in clip_name:
@@ -98,7 +117,8 @@ def merge_predictions(cfg_path: Path) -> None:
         if net not in masks:
             sys.exit(f"Network label '{net}' not in atlas.")
         mask = masks[net]
-        sub_dict = load_submission(Path(path), cache)
+        path = resolve_path(path, args.output_dir).expanduser().resolve()
+        sub_dict = load_submission(path, cache)
         for subj, clips in sub_dict.items():
             for clip_name, arr in clips.items():
                 if subj not in merged or clip_name not in merged[subj]:
@@ -115,14 +135,5 @@ def merge_predictions(cfg_path: Path) -> None:
     print(f"Saved merged predictions ➜  {output_path}")
 
 
-# ------------------------------------------------------------------ #
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Merge predictions with base → movie → ROI overrides")
-    parser.add_argument("-c", "--config", required=True, help="YAML file as described above")
-    args = parser.parse_args()
-
-    cfg_file = Path(args.config).expanduser().resolve()
-    if not cfg_file.exists():
-        sys.exit(f"Config file not found: {cfg_file}")
-
-    merge_predictions(cfg_file)
+    main()

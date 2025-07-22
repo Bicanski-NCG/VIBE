@@ -21,7 +21,7 @@ def main():
                              "(default $DATA_DIR or data/raw/fmri)")
     parser.add_argument("--output_dir", type=str, default=None,
                         help="Root directory for outputs & checkpoints "
-                             "(default $OUTPUT_DIR or data/outputs)")
+                             "(default $OUTPUT_DIR or runs)")
     parser.add_argument("--seed", default=None, type=int,
                         help="Random seed for reproducibility")
     parser.add_argument("--name", default=None, type=str,

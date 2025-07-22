@@ -129,7 +129,7 @@ def main():
     args.add_argument("--mask_filter", type=str, default='life', help="For which movie to generate masks") #TODO: filter for more than one movie
     args.add_argument("--output_dir", default=None, type=str,
                       help="Root directory for outputs & checkpoints "
-                           "(default $OUTPUT_DIR or data/outputs)")
+                           "(default $OUTPUT_DIR or runs)")
 
     # Arguments to modify how loss function is generated
     args.add_argument("--use_mask",type = str,default='pearsonr')
@@ -163,7 +163,7 @@ def main():
 
 
 
-    output_root =  Path(os.getenv("OUTPUT_DIR", "data/outputs"))
+    output_root =  Path(os.getenv("OUTPUT_DIR", "runs"))
 
 
     submission_dir = os.path.join(output_root, "submissions")

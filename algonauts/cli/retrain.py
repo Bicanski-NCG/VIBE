@@ -21,7 +21,7 @@ def main(args=None, run_id=None, n_epochs=None):
                             help="Model checkpoint (same as wandb run ID)")
         parser.add_argument("--output_dir", default=None, type=str,
                             help="Root directory for outputs & checkpoints "
-                                 "(default $OUTPUT_DIR or data/outputs)")
+                                 "(default $OUTPUT_DIR or runs)")
         parser.add_argument("--wandb_project", default=None, type=str,
                             help="W&B project name")
         parser.add_argument("--wandb_entity", default=None, type=str,

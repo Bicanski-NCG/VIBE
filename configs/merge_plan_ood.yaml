@@ -1,11 +1,11 @@
 # merge_plan.yaml
-atlas: data/raw/fmri/sub-01/atlas/sub-01_space-MNI152NLin2009cAsym_atlas-Schaefer18_parcel-1000Par7Net_desc-dseg_parcellation.nii.gz # single reference for masks
-output_path: runs/ood_model_joined_noqwen.npy
+atlas: sub-01/atlas/sub-01_space-MNI152NLin2009cAsym_atlas-Schaefer18_parcel-1000Par7Net_desc-dseg_parcellation.nii.gz # single reference for masks
+output_path: ood_model_joined.npy
 
 merge:
-  base: "runs/model1/submissions/model1_ood_all_ensemble_643.npy"
+  base: "model1/submissions/model1_ood_all_ensemble.npy"
   movies:
-    passepartout: "runs/model1_fr/submissions/model1_fr_passepartout_ensemble_680.npy"
+    passepartout: "model1_fr/submissions/model1_fr_passepartout_ensemble.npy"
   networks:
-    Vis: "runs/model_visual/submissions/model_visual_ood_all_ensemble_8.npy"
-    Default: "runs/model_default/submissions/model_default_ood_all_ensemble_913.npy"
+    Vis: "model_visual/submissions/model_visual_ood_all_ensemble.npy"
+    Default: "model_default/submissions/model_default_ood_all_ensemble.npy"

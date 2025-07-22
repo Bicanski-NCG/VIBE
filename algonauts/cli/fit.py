@@ -43,7 +43,7 @@ def main():
     args.output_dir = args.output_dir or os.getenv("OUTPUT_DIR", "runs")
 
     if args.name:
-        args.output_dir = os.path.join(args.output_dir, args.name)
+        output_dir = os.path.join(args.output_dir, args.name)
 
     ensure_paths_exist(
         (args.features_dir, "features_dir"),
@@ -52,11 +52,11 @@ def main():
 
     try:
         ensure_paths_exist(
-            (args.output_dir,   "output_dir"),
+            (output_dir,   "output_dir"),
         )
     except FileNotFoundError:
         # create output_dir
-        os.mkdir(args.output_dir)
+        os.mkdir(output_dir)
 
     # Run the training command
     with logger.step("🚀 Starting training..."):
@@ -65,6 +65,7 @@ def main():
     # Run the retraining command
     with logger.step("🚀 Starting retraining..."):
         args.no_diagnostics = True
+        args.output_dir = output_dir
         retrain_main(args, run_id=run_id, n_epochs=n_epochs)
 
 if __name__ == "__main__":

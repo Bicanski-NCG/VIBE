@@ -138,7 +138,12 @@ def main():
 
     if args.checkpoint_dir:
         logger.info(f"Loading checkpoints from directory: {args.checkpoint_dir}")
-        args.checkpoint = [os.path.basename(d) for d in glob.glob(os.path.join(args.checkpoint_dir, "final_model.pt"))]
+
+        args.checkpoint = [
+            os.path.basename(os.path.dirname(p))          # parent dir’s name
+            for p in glob.glob(os.path.join(args.checkpoint_dir, "*", "final_model.pt"))
+        ]
+
         if not args.checkpoint:
             raise FileNotFoundError(f"No checkpoints found in {args.checkpoint_dir}")
 

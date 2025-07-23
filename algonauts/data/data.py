@@ -210,31 +210,10 @@ class FMRI_Dataset(Dataset):
 
         h5 = self._get_h5(fmri_file)
 
-        if sample_info["has_multiple_runs"]:
-            # 1. what counts as "the same task"?
-            #    -> the file_name you already parsed (“life01”, “s01”, …)
-            fname = sample_info["file_name"]          # e.g. 'life01'
-            patt  = re.compile(rf"^ses-\d+_task-{fname}_run-(\d+)$")
-
-            # 2. collect every run that matches that pattern
-            run_keys = [k for k in h5.keys() if patt.match(k)]
-
-            if len(run_keys) == 2:                    # expected case
-                fmris = [torch.tensor(h5[k][:], dtype=torch.float32) for k in run_keys]
-                n     = min(t.shape[0] for t in fmris)          # trim to equal length
-                fmri_response_tensor = sum(t[:n] for t in fmris) / 2.0
-            else:
-                warnings.warn(
-                    f"Found {len(run_keys)} run(s) for task '{fname}' "
-                    f"in {os.path.basename(fmri_file)} – falling back to single run."
-                )
-                fmri_response_tensor = torch.tensor(
-                    h5[dataset_name][:], dtype=torch.float32
-                )
-        else:
-            fmri_response_tensor = torch.tensor(
-                h5[dataset_name][:], dtype=torch.float32
-            )
+        fmri_response_tensor = torch.tensor(
+            h5[dataset_name][:], dtype=torch.float32
+        )
+        
         # ---- Run‑wise (per‑key) z‑scoring ---------------------------------
         if self.normalize_bold:
             mu    = fmri_response_tensor.mean(dim=0, keepdim=True)

@@ -26,7 +26,7 @@ warmup_start_lr_factor: 0.1
 weight_decay: 0.00005
 
 # Epochs patience
-early_stop_patience: 1
+early_stop_patience: 2
 
 # Loss weights
 lambda_sample: 0

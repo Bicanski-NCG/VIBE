@@ -64,8 +64,11 @@ def main(args=None):
 
     # -------------------- PATH SANITY CHECKS --------------------
     # Get features and params paths
-    features_path = args.features or os.getenv("FEATURES_PATH", "configs/features.yaml")
-    params_path = args.params or os.getenv("PARAMS_PATH", "configs/params.yaml")
+    #features_path = args.features or os.getenv("FEATURES_PATH", "configs/features.yaml")
+    features_path = args.features or os.getenv("FEATURES_PATH", "configs/features_model2.yaml")
+
+    #params_path = args.params or os.getenv("PARAMS_PATH", "configs/params.yaml")
+    params_path = args.params or os.getenv("PARAMS_PATH", "configs/params_model2.yaml")
 
     # Same for dirs 
     features_dir = args.features_dir or os.getenv("FEATURES_DIR", "data/features")

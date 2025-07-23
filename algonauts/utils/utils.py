@@ -6,6 +6,8 @@ import torch
 from functools import lru_cache
 from nilearn.datasets import fetch_atlas_schaefer_2018
 from scipy.stats import pearsonr
+import os
+
 
 def voxelwise_pearsonr(y_true: np.ndarray,
                        y_pred: np.ndarray) -> np.ndarray:
@@ -168,3 +170,30 @@ def ensure_paths_exist(*pairs):
         
 
 
+
+
+def get_network_mask (target_networks, roi_masks):
+
+    
+    mask = torch.zeros(1000)
+    for net in target_networks:
+        if os.path.isfile(net):
+
+            if net.endswith('.npy'):
+
+                mcop = np.load(net).astype(int)
+
+            elif net.endswith('.pt'):
+                
+                mcop = torch.load(net,weights_only=True).cpu().numpy().astype(int)
+            else:
+                raise NotImplementedError
+        elif net in roi_masks.keys():
+
+            mcop = roi_masks[net].copy().astype(int)
+
+        else:
+            raise NotImplementedError
+        mask+= mcop
+
+    return mask.bool()

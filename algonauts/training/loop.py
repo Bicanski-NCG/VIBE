@@ -12,15 +12,8 @@ from algonauts.training.losses import (
 )
 from algonauts.utils.adjacency_matrices import get_laplacians
 from algonauts.utils.viz import load_and_label_atlas, voxelwise_pearsonr
+from algonauts.utils.utils import get_network_mask
 
-
-def get_network_mask (target_networks, roi_masks):
-    mask = torch.zeros(1000)
-    for net in target_networks:
-        mcop = roi_masks[net].copy().astype(int)
-        mask+= mcop
-
-    return mask.bool()
 
 
 def run_epoch(loader, model, optimizer, device, is_train, laplacians, config, network_mask=None):

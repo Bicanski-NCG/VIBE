@@ -183,7 +183,7 @@ def main():
             (submission_dir, "submission_dir"),
         )
     except FileNotFoundError:
-        os.mkdir(submission_dir)
+        os.makedirs(submission_dir, exist_ok=True)
 
     # Build model according to --ensemble or single checkpoint, with optional ROI wrap
     device = "cuda"

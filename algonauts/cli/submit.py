@@ -180,7 +180,7 @@ def main():
             (submission_dir, "submission_dir"),
         )
     except FileNotFoundError:
-        os.mkdir(submission_dir)
+        os.makedirs(submission_dir, exist_ok=True)
 
     device = "cuda"
     # Determine checkpoints to process (single or ensemble)

@@ -56,7 +56,7 @@ def main():
         )
     except FileNotFoundError:
         # create output_dir
-        os.mkdir(output_dir)
+        os.makedirs(output_dir, exist_ok=True)
 
     # Run the training command
     with logger.step("🚀 Starting training..."):

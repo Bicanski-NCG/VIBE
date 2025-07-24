@@ -44,6 +44,8 @@ def main():
 
     if args.name:
         output_dir = os.path.join(args.output_dir, args.name)
+    else:
+        output_dir = os.path.join(args.output_dir, "default")
 
     ensure_paths_exist(
         (args.features_dir, "features_dir"),

@@ -10,22 +10,22 @@ from vibe.cli.retrain import main as retrain_main
 def main():
     parser = argparse.ArgumentParser(description="Fit a model to the dataset")
     parser.add_argument("--features", default=None, type=str,
-                        help="Path to features YAML file")
+                        help="Path to feature-set YAML")
     parser.add_argument("--params", default=None, type=str,
-                        help="Path to training parameters YAML file")
+                        help="Path to training-parameter YAML")
     parser.add_argument("--features_dir", default=None, type=str,
                         help="Directory with extracted features "
-                             "(default $FEATURES_DIR or data/features)")
+                             "(if unset uses $FEATURES_DIR)")
     parser.add_argument("--data_dir", default=None, type=str,
                         help="Directory with raw fMRI data "
-                             "(default $DATA_DIR or data/raw/fmri)")
-    parser.add_argument("--output_dir", type=str, default=None,
+                             "(if unset uses $DATA_DIR)")
+    parser.add_argument("--output_dir", default=None, type=str,
                         help="Root directory for outputs & checkpoints "
-                             "(default $OUTPUT_DIR or runs)")
+                             "(if unset uses $OUTPUT_DIR)")
     parser.add_argument("--seed", default=None, type=int,
                         help="Random seed for reproducibility")
     parser.add_argument("--name", default=None, type=str,
-                        help="Run name for W&B")
+                        help="Run name. If unset, uses 'default'. Runs are stores in <output_dir>/<name>")
     parser.add_argument("--device", default="cuda", type=str,
                         help="Device to use for training (default: cuda)")
     parser.add_argument("--wandb_project", default=None, type=str,
@@ -35,30 +35,8 @@ def main():
     parser.add_argument("--no_diagnostics", action="store_true",
                         help="Skip diagnostics after training")
     parser.add_argument("--profile", action="store_true",
-                    help="Enable PyTorch profiling and export trace to output_dir/checkpoints/<run_id>/profiler_trace.json")
+                        help="Enable PyTorch profiling and export trace to <output_dir>/checkpoints/<run_id>/profiler_trace.json")
     args = parser.parse_known_args()[0]
-
-    args.features_dir = args.features_dir or os.getenv("FEATURES_DIR", "data/features")
-    args.data_dir = args.data_dir or os.getenv("DATA_DIR", "data/raw/fmri")
-    args.output_dir = args.output_dir or os.getenv("OUTPUT_DIR", "runs")
-
-    if args.name:
-        output_dir = os.path.join(args.output_dir, args.name)
-    else:
-        output_dir = os.path.join(args.output_dir, "default")
-
-    ensure_paths_exist(
-        (args.features_dir, "features_dir"),
-        (args.data_dir,     "data_dir"),
-    )
-
-    try:
-        ensure_paths_exist(
-            (output_dir,   "output_dir"),
-        )
-    except FileNotFoundError:
-        # create output_dir
-        os.makedirs(output_dir, exist_ok=True)
 
     # Run the training command
     with logger.step("🚀 Starting training..."):
@@ -67,7 +45,7 @@ def main():
     # Run the retraining command
     with logger.step("🚀 Starting retraining..."):
         args.no_diagnostics = True
-        args.output_dir = output_dir
+        args.output_dir = os.path.join(args.output_dir or os.getenv("OUTPUT_DIR", "runs"), args.name or "default")
         retrain_main(args, run_id=run_id, n_epochs=n_epochs)
 
 if __name__ == "__main__":

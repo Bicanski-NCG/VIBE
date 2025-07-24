@@ -60,9 +60,9 @@ def resolve_path(p, root):
 def main() -> None:
     parser = argparse.ArgumentParser(description="Merge predictions with base → movie → ROI overrides")
     parser.add_argument("-c", "--config", required=True, help="YAML file as described above")
-    parser.add_argument("--output_dir", type=str, default=os.getenv("OUTPUT_DIR", "runs"),
-                        help="Directory to save the merged output (default: runs)")
-    parser.add_argument("--data_dir", type=str, default=os.getenv("DATA_DIR", "data/raw/fmri"),
+    parser.add_argument("--output_dir", type=str, default=os.getenv("OUTPUT_DIR"),
+                        help="Root directory for outputs & checkpoints (if unset uses $OUTPUT_DIR)")
+    parser.add_argument("--data_dir", type=str, default=os.getenv("DATA_DIR"),
                         help="Directory with raw fMRI data (default: data/raw/fmri)")
     args = parser.parse_args()
 

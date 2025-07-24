@@ -19,38 +19,38 @@ torch.set_float32_matmul_precision("high") # Use high precision for matrix multi
 
 def main(args=None):
 
-    with logger.step("🔧 Parsing CLI arguments and setting seed..."):
-        if not args:
-            parser = argparse.ArgumentParser(description="Training entrypoint")
-            parser.add_argument("--features", default=None, type=str,
-                                help="Path to feature-set YAML")
-            parser.add_argument("--params", default=None, type=str,
-                                help="Path to training-parameter YAML")
-            parser.add_argument("--features_dir", default=None, type=str,
-                                help="Directory with extracted features "
-                                     "(default $FEATURES_DIR or data/features)")
-            parser.add_argument("--data_dir", default=None, type=str,
-                                help="Directory with raw fMRI data "
-                                     "(default $DATA_DIR or data/raw/fmri)")
-            parser.add_argument("--output_dir", default=None, type=str,
-                                help="Root directory for outputs & checkpoints "
-                                     "(default $OUTPUT_DIR or runs)")
-            parser.add_argument("--seed", default=None, type=int,
-                                help="Random seed for reproducibility")
-            parser.add_argument("--name", default=None, type=str,
-                                help="Run name for W&B")
-            parser.add_argument("--device", default="cuda", type=str,
-                                help="Device to use for training (default: cuda)")
-            parser.add_argument("--wandb_project", default=None, type=str,
-                                help="W&B project name")
-            parser.add_argument("--wandb_entity", default=None, type=str,
-                                help="W&B entity (team) name")
-            parser.add_argument("--no_diagnostics", action="store_true",
-                                help="Skip diagnostics after training")
-            parser.add_argument("--profile", action="store_true",
-                                help="Enable PyTorch profiling and export trace to output_dir/checkpoints/<run_id>/profiler_trace.json")
-            args = parser.parse_known_args()[0]
+    if not args:
+        parser = argparse.ArgumentParser(description="Training entrypoint")
+        parser.add_argument("--features", default=None, type=str,
+                            help="Path to feature-set YAML")
+        parser.add_argument("--params", default=None, type=str,
+                            help="Path to training-parameter YAML")
+        parser.add_argument("--features_dir", default=None, type=str,
+                            help="Directory with extracted features "
+                                 "(if unset uses $FEATURES_DIR)")
+        parser.add_argument("--data_dir", default=None, type=str,
+                            help="Directory with raw fMRI data "
+                                 "(if unset uses $DATA_DIR)")
+        parser.add_argument("--output_dir", default=None, type=str,
+                            help="Root directory for outputs & checkpoints "
+                                 "(if unset uses $OUTPUT_DIR)")
+        parser.add_argument("--seed", default=None, type=int,
+                            help="Random seed for reproducibility")
+        parser.add_argument("--name", default=None, type=str,
+                            help="Run name. If unset, uses 'default'. Runs are stores in <output_dir>/<name>")
+        parser.add_argument("--device", default="cuda", type=str,
+                            help="Device to use for training (default: cuda)")
+        parser.add_argument("--wandb_project", default=None, type=str,
+                            help="W&B project name")
+        parser.add_argument("--wandb_entity", default=None, type=str,
+                            help="W&B entity (team) name")
+        parser.add_argument("--no_diagnostics", action="store_true",
+                            help="Skip diagnostics after training")
+        parser.add_argument("--profile", action="store_true",
+                            help="Enable PyTorch profiling and export trace to <output_dir>/checkpoints/<run_id>/profiler_trace.json")
+        args = parser.parse_known_args()[0]
 
+    with logger.step("🔧 Parsing CLI arguments and setting seed..."):
         if args.seed is None:
             chosen_seed = random.SystemRandom().randint(0, 2**32 - 1)
             logger.info(f"No --seed provided; using generated seed={chosen_seed}")
@@ -60,15 +60,17 @@ def main(args=None):
         set_seed(chosen_seed)
 
     # -------------------- PATH SANITY CHECKS --------------------
-    features_path = args.features or os.getenv("FEATURES_PATH", "configs/features.yaml")
-    params_path = args.params or os.getenv("PARAMS_PATH", "configs/params.yaml")
+    features_path = args.features or os.getenv("FEATURES_PATH")
+    params_path = args.params or os.getenv("PARAMS_PATH")
 
-    features_dir = args.features_dir or os.getenv("FEATURES_DIR", "data/features")
-    data_dir = args.data_dir or os.getenv("DATA_DIR", "data/raw/fmri")
-    output_dir = args.output_dir or os.getenv("OUTPUT_DIR", "runs")
+    features_dir = args.features_dir or os.getenv("FEATURES_DIR")
+    data_dir = args.data_dir or os.getenv("DATA_DIR")
+    output_dir = args.output_dir or os.getenv("OUTPUT_DIR")
 
     if args.name:
         output_dir = os.path.join(output_dir, args.name)
+    else:
+        output_dir = os.path.join(output_dir, "default")
 
     features_path = Path(features_path)
     params_path = Path(params_path)

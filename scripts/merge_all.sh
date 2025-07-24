@@ -5,6 +5,6 @@
 . scripts/env.sh
 
 echo "Starting merge process for all models..."
-uv run algonauts-merge --config configs/merge_plan_s07.yaml --output_dir $OUTPUTS_DIR --data_dir $DATA_DIR
-uv run algonauts-merge --config configs/merge_plan_ood.yaml --output_dir $OUTPUTS_DIR --data_dir $DATA_DIR
+uv run vibe-merge --config configs/merge_plan_s07.yaml --output_dir $OUTPUTS_DIR --data_dir $DATA_DIR
+uv run vibe-merge --config configs/merge_plan_ood.yaml --output_dir $OUTPUTS_DIR --data_dir $DATA_DIR
 echo "Merge process completed."

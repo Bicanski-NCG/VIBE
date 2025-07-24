@@ -5,10 +5,10 @@ import glob
 import numpy as np
 import torch
 import zipfile
-from algonauts.models import load_model_from_ckpt
-from algonauts.models.ensemble import ROIAdaptiveEnsemble
-from algonauts.utils import ensure_paths_exist
-from algonauts.utils import logger
+from vibe.models import load_model_from_ckpt
+from vibe.models.ensemble import ROIAdaptiveEnsemble
+from vibe.utils import ensure_paths_exist
+from vibe.utils import logger
 
 
 def normalize_feature(x, mean, std):

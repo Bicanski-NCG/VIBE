@@ -1,13 +1,13 @@
-from algonauts.data.data import FMRI_Dataset
+from vibe.dataset.data import FMRI_Dataset
 from scipy.stats import pearsonr
 import os
-from algonauts.utils import ensure_paths_exist
+from vibe.utils import ensure_paths_exist
 import argparse
 from pathlib import Path
 import numpy as np
 import torch
-from algonauts.models import load_model_from_ckpt
-from algonauts.models.ensemble import EnsembleAverager, ROIAdaptiveEnsemble
+from vibe.models import load_model_from_ckpt
+from vibe.models.ensemble import EnsembleAverager, ROIAdaptiveEnsemble
 from tqdm import  tqdm
 
 

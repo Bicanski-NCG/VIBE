@@ -3,15 +3,15 @@ import torch.nn as nn
 import wandb
 import numpy as np
 
-from algonauts.utils import logger
-from algonauts.training.losses import (
+from vibe.utils import logger
+from vibe.training.losses import (
     masked_negative_pearson_loss,
     sample_similarity_loss,
     roi_similarity_loss,
     spatial_regularizer_loss
 )
-from algonauts.utils.adjacency_matrices import get_laplacians
-from algonauts.utils.viz import load_and_label_atlas, voxelwise_pearsonr
+from vibe.utils.adjacency_matrices import get_laplacians
+from vibe.utils.viz import load_and_label_atlas, voxelwise_pearsonr
 
 
 def get_network_mask (target_networks, roi_masks):

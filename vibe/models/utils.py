@@ -4,8 +4,8 @@ import numpy as np
 from pathlib import Path
 import yaml
 
-from algonauts.utils import Config
-from algonauts.models import FMRIModel
+from vibe.utils import Config
+from vibe.models import FMRIModel
 
 
 def save_initial_state(model, path="initial_model.pt", random_path="initial_random_state.pt"):

@@ -6,11 +6,11 @@ import os
 import torch
 from torch.profiler import profile, ProfilerActivity
 
-from algonauts.data import get_train_val_loaders
-from algonauts.models import save_initial_state, build_model
-from algonauts.training import train_val_loop, create_optimizer_and_scheduler
-from algonauts.utils import logger, Config, set_seed, ensure_paths_exist, run_feature_analyses
-from algonauts.utils.viz import plot_diagnostics
+from vibe.dataset import get_train_val_loaders
+from vibe.models import save_initial_state, build_model
+from vibe.training import train_val_loop, create_optimizer_and_scheduler
+from vibe.utils import logger, Config, set_seed, ensure_paths_exist, run_feature_analyses
+from vibe.utils.viz import plot_diagnostics
 
 torch.backends.cudnn.enabled = True  # Enable cuDNN for better performance
 torch.backends.cudnn.benchmark = True  # Enable for faster training on fixed input sizes

@@ -4,7 +4,7 @@ from scipy.ndimage import center_of_mass # For finding centroids
 from scipy.spatial.distance import cdist # For pairwise distances
 import torch
 
-from algonauts.utils import get_atlas
+from vibe.utils import get_atlas
 
 
 def get_network_masks(network_names, n_rois: int = 1000):

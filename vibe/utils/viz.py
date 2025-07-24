@@ -13,9 +13,9 @@ from scipy.stats import pearsonr
 import pandas as pd
 import wandb
 
-from algonauts.utils.utils import voxelwise_pearsonr
-from algonauts.utils.utils import get_atlas
-from algonauts.utils import logger, collect_predictions
+from vibe.utils.utils import voxelwise_pearsonr
+from vibe.utils.utils import get_atlas
+from vibe.utils import logger, collect_predictions
 
 
 def _wandb_log_image(img_path: Path, key_prefix: str = "viz"):

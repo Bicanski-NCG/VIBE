@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from pathlib import Path
-from algonauts.models.utils import load_model_from_ckpt
+from vibe.models.utils import load_model_from_ckpt
 
 
 class EnsembleAverager(nn.Module):

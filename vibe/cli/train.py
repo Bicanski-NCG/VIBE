@@ -64,11 +64,13 @@ def main(args=None):
     params_path = args.params or os.getenv("PARAMS_PATH", "configs/params.yaml")
 
     features_dir = args.features_dir or os.getenv("FEATURES_DIR", "data/features")
-    data_dir = args.data_dir or os.getenv("DATA_DIR", "data/raw/fmri")
+    data_dir = args.data_dir or os.getenv("DATA_DIR", "data/fmri")
     output_dir = args.output_dir or os.getenv("OUTPUT_DIR", "runs")
 
     if args.name:
         output_dir = os.path.join(output_dir, args.name)
+    else:
+        output_dir = os.path.join(output_dir, "default")
 
     features_path = Path(features_path)
     params_path = Path(params_path)

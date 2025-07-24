@@ -20,11 +20,11 @@ def main(args=None, run_id=None, n_epochs=None):
                             help="Model checkpoint (same as wandb run ID)")
         parser.add_argument("--output_dir", default=None, type=str,
                             help="Root directory for outputs & checkpoints "
-                                 "(default $OUTPUT_DIR or runs)")
+                                 "(if unset uses $OUTPUT_DIR)")
         parser.add_argument("--wandb_project", default=None, type=str,
                             help="W&B project name")
         parser.add_argument("--wandb_entity", default=None, type=str,
-                                help="W&B entity (team) name")
+                            help="W&B entity (team) name")
         parser.add_argument("--device", type=str, default="cuda",
                             help="Device to use for training (default: cuda)")    
         parser.add_argument("--no_diagnostics", action="store_true",
@@ -39,7 +39,7 @@ def main(args=None, run_id=None, n_epochs=None):
         raise ValueError("Please provide a checkpoint to load.")
 
 
-    output_dir = Path(args.output_dir or os.getenv("OUTPUT_DIR", "runs"))
+    output_dir = Path(args.output_dir or os.getenv("OUTPUT_DIR"))
     ckpt_dir = output_dir / 'checkpoints' / checkpoint
     model_path = ckpt_dir / "initial_model.pt"
     params_path = ckpt_dir / "config.yaml"

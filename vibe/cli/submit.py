@@ -128,7 +128,8 @@ def main():
                         help="Directory containing the checkpoint(s) to load")
     parser.add_argument("--name", type=str, default=None, help="Name of output file")
     parser.add_argument("--output_dir", default=None, type=str,
-                        help="Root directory for outputs & checkpoints (default $OUTPUT_DIR or runs)")
+                        help="Root directory for outputs & checkpoints "
+                                "(if unset uses $OUTPUT_DIR)")
     parser.add_argument("--roi_ensemble", action="store_true",
                         help="Use ROIAdaptiveEnsemble to select best models per ROI")
     parser.add_argument("--test_names", type=str, default=None, nargs="+",
@@ -162,7 +163,7 @@ def main():
 
     logger.info(f"Using checkpoint(s): {args.checkpoint}")
 
-    output_root = Path(args.output_dir or os.getenv("OUTPUT_DIR", "runs"))
+    output_root = Path(args.output_dir or os.getenv("OUTPUT_DIR"))
     submission_dir = output_root / "submissions"
     checkpoint_dir = output_root / "checkpoints" / args.checkpoint[0]
     final_model_path = checkpoint_dir / "final_model.pt" if checkpoint_dir else None

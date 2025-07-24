@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """
-merging.py  —  three‑level override merger
-==========================================
+Merge predictions from multiple models, movies, and networks.
 
-YAML schema (exactly what the user asked for)
----------------------------------------------
+YAML schema
+-----------
 atlas: /atlas/schaefer1000_7net.nii.gz   # required, NIfTI parcellation
 output_path: /out/path                   # where to write the merged .npy
 merge:
-  base: "runs/ood_model_1_fixed/submissions/ensemble.npy"    # required
+  base: "runs/ood_model_1_fixed/submissions/ensemble.npy"             # required
   movies:                                                             # optional
     passepartout: "data/..._fr/submissions/ensemble.npy"
   networks:                                                           # optional
@@ -19,8 +18,6 @@ merge:
 1.   start with **base**
 2.   replace *entire clips* specified in `movies`
 3.   graft only the voxels of each ROI specified in `networks`
-
-No subject‑level cherry‑picks; whatever subjects are inside the files get used.
 """
 
 from __future__ import annotations
@@ -37,9 +34,6 @@ import yaml
 from algonauts.utils.viz import load_and_label_atlas
 
 
-# ------------------------------------------------------------------ #
-# helpers                                                            #
-# ------------------------------------------------------------------ #
 def load_submission(path: Path, cache: Dict[str, dict]) -> dict:
     """Load a .npy submission once and memoize."""
     p = str(path.expanduser().resolve())
@@ -63,9 +57,6 @@ def resolve_path(p, root):
     return p if p.is_absolute() else Path(root) / p
 
 
-# ------------------------------------------------------------------ #
-# main logic                                                         #
-# ------------------------------------------------------------------ #
 def main() -> None:
     parser = argparse.ArgumentParser(description="Merge predictions with base → movie → ROI overrides")
     parser.add_argument("-c", "--config", required=True, help="YAML file as described above")
@@ -79,11 +70,9 @@ def main() -> None:
     if not cfg_file.exists():
         sys.exit(f"Config file not found: {cfg_file}")
 
-    # ---- read YAML ------------------------------------------------ #
     with cfg_file.open() as f:
         cfg = yaml.safe_load(f)
 
-    # minimal schema validation
     if "atlas" not in cfg or "merge" not in cfg or "base" not in cfg["merge"]:
         sys.exit("YAML must contain keys: atlas, merge.base")
 
@@ -97,11 +86,9 @@ def main() -> None:
 
     cache: Dict[str, dict] = {}
 
-    # ---- 1. load base -------------------------------------------- #
     base_path = resolve_path(cfg["merge"]["base"], args.output_dir).expanduser().resolve()
     merged = load_submission(base_path, cache)  # dict {subject: {clip: array}}
 
-    # ---- 2. movie‑level overrides -------------------------------- #
     for movie, path in (cfg["merge"].get("movies") or {}).items():
         path = resolve_path(path, args.output_dir).expanduser().resolve()
         sub_dict = load_submission(path, cache)
@@ -112,7 +99,6 @@ def main() -> None:
                         merged[subj] = {}
                     merged[subj][clip_name] = arr.copy()
 
-    # ---- 3. network‑level overrides ------------------------------ #
     for net, path in (cfg["merge"].get("networks") or {}).items():
         if net not in masks:
             sys.exit(f"Network label '{net}' not in atlas.")
@@ -126,7 +112,6 @@ def main() -> None:
                     merged.setdefault(subj, {})[clip_name] = arr.copy()
                 merged[subj][clip_name][..., mask] = arr[..., mask]
 
-    # ---- save ----------------------------------------------------- #
     npy_path = output_path.with_suffix(".npy")
     zip_path = output_path.with_suffix(".zip")
     np.save(npy_path, merged, allow_pickle=True)

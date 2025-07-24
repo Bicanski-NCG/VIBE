@@ -7,6 +7,7 @@ from functools import lru_cache
 from nilearn.datasets import fetch_atlas_schaefer_2018
 from scipy.stats import pearsonr
 
+
 def voxelwise_pearsonr(y_true: np.ndarray,
                        y_pred: np.ndarray) -> np.ndarray:
     """
@@ -27,7 +28,7 @@ def voxelwise_pearsonr(y_true: np.ndarray,
     )
 
 
-@lru_cache(maxsize=None) # We only ever use one atlas size
+@lru_cache(maxsize=None)
 def get_atlas(n_rois: int = 1000, yeo_networks: int = 7):
     """
     Fetch the Schaefer 2018 atlas with the specified number of ROIs.
@@ -59,8 +60,8 @@ def collect_predictions(loader, model, device):
     sid_map = {v: k for k, v in loader.dataset.subject_name_id_dict.items()}
     with torch.no_grad():
         for batch in loader:
-            subj_ids = batch["subject_ids"]      # tensor shape (B,)
-            run_ids  = batch["run_ids"]          # tensor shape (B,)
+            subj_ids = batch["subject_ids"]
+            run_ids  = batch["run_ids"]
             fmri     = batch["fmri"].to(device)
             attn     = batch["attention_masks"].to(device)
             run_ids  = batch["run_ids"]
@@ -71,7 +72,6 @@ def collect_predictions(loader, model, device):
             for i, sid in enumerate(subj_ids):
                 sid = sid_map[sid]
 
-                # Only keep "valid" timepoints
                 valid_mask = attn[i].bool()
                 fmri_i = fmri[i][valid_mask].cpu().numpy()
                 pred_i = pred[i][valid_mask].cpu().numpy()
@@ -121,25 +121,22 @@ def evaluate_corr(model,
             if preprocess is not None:
                 preprocess(batch)
 
-            # --- move tensors ---
-            attn = batch["attention_masks"].to(device, non_blocking=True)   # (B,T)
-            fmri = batch["fmri"].to(device, non_blocking=True)              # (B,T,V)
+            attn = batch["attention_masks"].to(device, non_blocking=True)
+            fmri = batch["fmri"].to(device, non_blocking=True)
             feats = {k: batch[k].to(device, non_blocking=True)
                      for k in loader.dataset.modalities}
             subj = batch["subject_ids"]
             run  = batch["run_ids"]
 
-            # --- forward ---
-            pred = model(feats, subj, run, attn)                            # (B,T,V)
+            pred = model(feats, subj, run, attn)
 
-            # --- apply collect_predictions masking ---
             for i in range(pred.size(0)):
-                valid = attn[i].bool()                                      # (T,)
+                valid = attn[i].bool()
                 if valid.any():
                     pred_chunks.append(pred[i][valid].cpu().numpy())
                     true_chunks.append(fmri[i][valid].cpu().numpy())
 
-    y_pred = np.concatenate(pred_chunks, axis=0)   # (T_total, V)
+    y_pred = np.concatenate(pred_chunks, axis=0)
     y_true = np.concatenate(true_chunks, axis=0)
     return voxelwise_pearsonr(y_true, y_pred)
 
@@ -165,6 +162,3 @@ def ensure_paths_exist(*pairs):
         p = Path(p)
         if not p.exists():
             raise FileNotFoundError(f"{pretty} not found: {p}")
-        
-
-

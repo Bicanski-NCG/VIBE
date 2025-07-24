@@ -27,9 +27,7 @@ def _wandb_log_image(img_path: Path, key_prefix: str = "viz"):
         wandb.log({f"{key_prefix}/{img_path.name}": wandb.Image(str(img_path))},
                   commit=False)
 
-# ————————————————————————
-# Module-level constants
-# ————————————————————————
+
 _DEFAULT_CMAP = "hot_r"
 _RESIDUAL_CMAP = "cold_hot"
 
@@ -65,10 +63,8 @@ def load_and_label_atlas(atlas_path: os.PathLike | str,
     all_labels = np.insert(schaefer.labels, 0,
                            "7Networks_NA_Background_0").astype(str)
     if anatomical:
-        # Extract the anatomical labels from the end of the label string
         network_labels = np.array([label.split('_')[3] if not label.split('_')[3].isdigit() else label.split('_')[2] for label in all_labels])
     else:
-        # Extact the functional labels from the label string
         network_labels = np.array([label.split('_')[2] for label in all_labels])
 
     masker = NiftiLabelsMasker(
@@ -79,9 +75,6 @@ def load_and_label_atlas(atlas_path: os.PathLike | str,
     masker.fit()
     return masker
 
-# ==========================================================================
-# Scalar diagnostics
-# ==========================================================================
 
 def roi_table(r: np.ndarray,
               subj_id: str,
@@ -120,10 +113,6 @@ def roi_table(r: np.ndarray,
 
     return df
 
-
-# ==========================================================================
-# Plot helpers (all return Path to image)
-# ==========================================================================
 
 def plot_glass_brain(r: np.ndarray,
                      subj_id: str,
@@ -204,9 +193,6 @@ def plot_time_correlation(r_t: np.ndarray,
     return path
 
 
-# ----------------------------------------------------------------------
-# “Bad TR” glass-brain
-# ----------------------------------------------------------------------
 def plot_glass_bads(y_pred: np.ndarray,
                     y_true: np.ndarray,
                     subj_id: str,
@@ -227,9 +213,6 @@ def plot_glass_bads(y_pred: np.ndarray,
                             out_dir=out_dir, filename="glass_bads")
 
 
-# ----------------------------------------------------------------------
-# Residual diagnostics
-# ----------------------------------------------------------------------
 def plot_residual_glass(y_true: np.ndarray,
                         y_pred: np.ndarray,
                         subj_id: str,
@@ -311,6 +294,7 @@ def plot_residual_psd(y_true: np.ndarray,
     plt.close(fig)
     return path
 
+
 def plot_diagnostics(model, loader, config, out_dir):
     """Generate subject‑level and group‑level visual diagnostics and log them to W&B."""
     fmri_true, fmri_pred, subj_ids, atlas_paths = collect_predictions(loader, model, config.device)
@@ -318,14 +302,13 @@ def plot_diagnostics(model, loader, config, out_dir):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Persist validation predictions for later analysis
     pred_path = out_dir / "val_predictions.pkl.gz"
     with gzip.open(pred_path, "wb") as f:
         pickle.dump(
             {
                 "subjects": subj_ids,
                 "atlas_paths": atlas_paths,
-                "fmri_true": fmri_true,   # lists of (T, V) ndarrays
+                "fmri_true": fmri_true,
                 "fmri_pred": fmri_pred,
             },
             f,
@@ -342,14 +325,12 @@ def plot_diagnostics(model, loader, config, out_dir):
 
         plot_glass_brain(r, sid, masker, out_dir=str(out_dir))
 
-        # plot_corr_histogram(r, sid, out_dir=str(out_dir))
-
         df_roi = roi_table(r, sid, masker, out_dir=str(out_dir))
         table_roi = wandb.Table(dataframe=df_roi.astype({"mean_r": float}))
         bar_chart = wandb.plot.bar(
             table_roi,
-            "label",      # x‑axis
-            "mean_r",     # y‑axis
+            "label",
+            "mean_r",
             title=f"ROI mean Pearson r – {sid}",
         )
         wandb.log({f"viz/roi_bar_{sid}": bar_chart}, commit=False)
@@ -357,29 +338,19 @@ def plot_diagnostics(model, loader, config, out_dir):
         r_t = np.array([pearsonr(true[t], pred[t])[0] for t in range(true.shape[0])])
         plot_time_correlation(r_t, sid, out_dir=str(out_dir))
 
-        # plot_glass_bads(true, pred, sid, masker, out_dir=str(out_dir), pct_bads=config.pct_bads)
-
-        # plot_residual_glass(true, pred, sid, masker, out_dir=str(out_dir))
-
-        # plot_pred_vs_true_scatter(true, pred, sid, out_dir=str(out_dir))
-
-        # plot_residual_psd(true, pred, sid, out_dir=str(out_dir), fs=1/1.49)
-
     # ----- Group diagnostics -----
     logger.info("📊 Group diagnostics …")
     group_mean_r = np.mean([voxelwise_pearsonr(true, pred) for true, pred in zip(fmri_true, fmri_pred)], axis=0)
-    group_masker = load_and_label_atlas(atlas_paths[0], yeo_networks=config.yeo_networks, anatomical=False)  # use first atlas for group
+    group_masker = load_and_label_atlas(atlas_paths[0], yeo_networks=config.yeo_networks, anatomical=False)
 
     plot_glass_brain(group_mean_r, "group", group_masker, out_dir=str(out_dir))
-
-    # plot_corr_histogram(group_mean_r, "group", out_dir=str(out_dir))
 
     df_group_roi = roi_table(group_mean_r, "group", group_masker, out_dir=str(out_dir))
     table_roi = wandb.Table(dataframe=df_group_roi.astype({"mean_r": float}))
     bar_chart = wandb.plot.bar(
         table_roi,
-        "label",       # x‑axis
-        "mean_r",      # y‑axis
+        "label",
+        "mean_r",
         title="Group ROI mean Pearson r",
     )
     wandb.log({"viz/roi_bar_group": bar_chart}, commit=False)
@@ -394,24 +365,5 @@ def plot_diagnostics(model, loader, config, out_dir):
     for i, arr in enumerate(r_t_list):
         r_t_mat[i, :arr.size] = arr
 
-    group_r_t = np.nanmean(r_t_mat, axis=0)   # (max_T,)
+    group_r_t = np.nanmean(r_t_mat, axis=0)
     plot_time_correlation(group_r_t, "group", out_dir=str(out_dir))
-
-    # group_res_true = np.concatenate([t for t in fmri_true], 0)
-    # group_res_pred = np.concatenate([p for p in fmri_pred], 0)
-    # plot_residual_glass(group_res_true, group_res_pred, "group", group_masker, out_dir=str(out_dir))
-
-    # plot_glass_bads(
-    #     group_res_true,
-    #     group_res_pred,
-    #     "group",
-    #     group_masker,
-    #     out_dir=str(out_dir),
-    #     pct_bads=config.pct_bads
-    # )
-
-    # plot_pred_vs_true_scatter(
-    #     group_res_true, group_res_pred, "group", out_dir=str(out_dir), max_points=config.max_scatter_points
-    # )
-
-    # plot_residual_psd(group_res_true, group_res_pred, "group", out_dir=str(out_dir), fs=1/1.49)

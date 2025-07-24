@@ -12,7 +12,6 @@ from algonauts.utils.viz import plot_diagnostics
 
 
 def main(args=None, run_id=None, n_epochs=None):
-    # -------------------- CLI ARGUMENTS --------------------
     if not args:
         parser = argparse.ArgumentParser(
             description="Retrain a model on the full dataset after initial training"
@@ -59,7 +58,6 @@ def main(args=None, run_id=None, n_epochs=None):
     
     with logger.step("📦 Loading checkpoint and config …"):
         try:
-            # Load the model and config from the checkpoint
             model, config = load_model_from_ckpt(
                 model_ckpt_path=model_path,
                 params_path=params_path,

@@ -9,9 +9,6 @@ from algonauts.utils import logger
 
 def get_train_val_loaders(config):
     """Return train and validation DataLoaders."""
-    # Assume normalization stats have been precomputed
-    norm_stats = None # Outcommented to enforce recomputation torch.load("normalization_stats.pt")
-    #logger.info("📏 Loaded voxel‑wise normalization stats.")
 
     # Prepend the features directory to each feature path
     features_dir = Path(config.features_dir)
@@ -22,7 +19,7 @@ def get_train_val_loaders(config):
                       input_dims=config.input_dims,
                       modalities=config.modalities,
                       noise_std=config.train_noise_std,
-                      normalization_stats=norm_stats,
+                      normalization_stats=None,
                       oversample_factor=config.oversample_factor,
                       modality_dropout_mode = config.modality_dropout_mode,
                       modality_dropout_prob = config.modality_dropout_prob,
@@ -32,7 +29,6 @@ def get_train_val_loaders(config):
                       )
 
     if config.filter_name is not None:
-        #filter_fn = lambda sample: sample["name"] not in config.filter_name
         def filter_fn(sample):
             return all([filter_key not in sample["dataset_name"] for filter_key in config.filter_name])
 
@@ -88,7 +84,6 @@ def get_train_val_loaders(config):
         pin_memory=config.pin_memory,
     )
 
-    # Log dataset sizes to W&B for quick dashboard reference
     wandb.log({
         "dataset/train_samples": len(train_ds),
         "dataset/val_samples": len(valid_ds),
@@ -112,7 +107,7 @@ def get_full_loader(config):
         feature_paths=config.features,
         input_dims=config.input_dims,
         modalities=config.modalities,
-        noise_std=0.0,   # no noise augmentation during full training
+        noise_std=0.0,
         normalization_stats=norm_stats,
         modality_dropout_mode = config.modality_dropout_mode,
         modality_dropout_prob = config.modality_dropout_prob,
@@ -121,12 +116,8 @@ def get_full_loader(config):
     )
 
     if config.filter_name is not None:
-
-       # filter_fn = lambda sample: sample["name"] not in config.filter_name
-
         def filter_fn(sample):
             return all([filter_key not in sample["dataset_name"] for filter_key in config.filter_name])
-
 
         ds_full = ds_full.filter_samples(filter_fn)
     

@@ -145,10 +145,8 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
     best_val_epoch = 0
     laplacians = get_laplacians(config.spatial_sigma)
 
-    # Group-level masker for visual diagnostics
     group_masker = load_and_label_atlas(valid_loader.dataset.samples[0]["subject_atlas"], yeo_networks=7)
 
-    # Track ROI validation correlations
     roi_to_scores = {}
     roi_to_epoch = {}
     labels = np.array(group_masker.labels[1:])
@@ -212,10 +210,9 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
 
             scheduler.step()
             logger.info(f"🔄 LR stepped → {optimizer.param_groups[0]['lr']:.2e}")
-            current_val = val_losses[1]  # negative correlation as primary metric
+            current_val = val_losses[1]
             logger.info(f"🔎 Train NegCorr = {train_losses[1]:.4f}, Val NegCorr = {current_val:.4f}")
 
-            # Go through each ROI and log the best validation correlation (flatten across batch and time)
             fmri_true = [x.reshape(-1, x.shape[-1]) for x in fmri_true]
             fmri_pred = [x.reshape(-1, x.shape[-1]) for x in fmri_pred]
             voxelwise_r = voxelwise_pearsonr(
@@ -223,23 +220,22 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
                 np.concatenate(fmri_pred, axis=0),
             )
            
+            roi_scores = {}
             for roi_name, roi_idx in [(name, idx) for name, idx in roi_idxs.items() if name in config.target_networks]:
                 roi_r = np.mean(voxelwise_r[roi_idx])
+                roi_scores[roi_name] = roi_r
 
-                # Track best validation scores per ROI
                 if roi_name not in roi_to_scores or roi_r > roi_to_scores[roi_name]:
                     roi_to_scores[roi_name] = roi_r
                     roi_to_epoch[roi_name] = epoch
                     logger.info(f"🏆 New best {roi_name} at epoch {epoch}: {roi_r:.4f}")
 
-            wandb.log({"val/roi_scores": roi_to_scores}, commit=False)
+            wandb.log({"val/roi_scores": roi_scores}, commit=False)
 
-            # If any ROI has best validation score this epoch, save the model
             if epoch in roi_to_epoch.values():
                 roi_patience_counter = 0
             else:
                 roi_patience_counter += 1
-            # Log group-level Pearson correlation
             if current_val < best_val_loss:
                 best_val_loss = current_val
                 best_val_epoch = epoch
@@ -266,10 +262,9 @@ def train_val_loop(model, optimizer, scheduler, train_loader, valid_loader, ckpt
         torch.save(roi_names, ckpt_dir / "roi_names.pt")
         torch.save(roi_to_epoch, ckpt_dir / "roi_to_epoch.pt")
 
-    # Log best validation epoch and scores
     wandb.run.summary["best_val_pearson"] = best_val_loss
     wandb.run.summary["best_val_epoch"] = best_val_epoch
-    return best_val_epoch, max(roi_to_epoch.values(), default=0) # Return the global best epoch and max ROI epoch
+    return best_val_epoch, max(roi_to_epoch.values(), default=0)
 
 
 def full_loop(model, optimizer, scheduler, full_loader, ckpt_dir, config, best_val_epoch):

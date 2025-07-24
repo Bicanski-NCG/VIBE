@@ -19,11 +19,9 @@ torch.set_float32_matmul_precision("high") # Use high precision for matrix multi
 
 def main(args=None):
 
-    # -------------------- CLI ARGUMENTS & SEED --------------------
     with logger.step("🔧 Parsing CLI arguments and setting seed..."):
         if not args:
             parser = argparse.ArgumentParser(description="Training entrypoint")
-            # ---- standard path flags ----
             parser.add_argument("--features", default=None, type=str,
                                 help="Path to feature-set YAML")
             parser.add_argument("--params", default=None, type=str,
@@ -53,7 +51,6 @@ def main(args=None):
                                 help="Enable PyTorch profiling and export trace to output_dir/checkpoints/<run_id>/profiler_trace.json")
             args = parser.parse_known_args()[0]
 
-        # Set seed
         if args.seed is None:
             chosen_seed = random.SystemRandom().randint(0, 2**32 - 1)
             logger.info(f"No --seed provided; using generated seed={chosen_seed}")
@@ -63,11 +60,9 @@ def main(args=None):
         set_seed(chosen_seed)
 
     # -------------------- PATH SANITY CHECKS --------------------
-    # Get features and params paths
     features_path = args.features or os.getenv("FEATURES_PATH", "configs/features.yaml")
     params_path = args.params or os.getenv("PARAMS_PATH", "configs/params.yaml")
 
-    # Same for dirs 
     features_dir = args.features_dir or os.getenv("FEATURES_DIR", "data/features")
     data_dir = args.data_dir or os.getenv("DATA_DIR", "data/raw/fmri")
     output_dir = args.output_dir or os.getenv("OUTPUT_DIR", "runs")
@@ -92,14 +87,12 @@ def main(args=None):
             (output_dir,   "output_dir"),
         )
     except FileNotFoundError:
-        # create output_dir
         os.makedirs(output_dir, exist_ok=True)
 
     logger.info("✅ Paths validated.")
 
     # -------------------- CONFIG & W&B SETUP --------------------
     with logger.step("📄 Loading config and initializing W&B..."):
-        # Load config from YAML files
         config = Config.from_yaml(features_path, params_path, chosen_seed, args.name,
                                   features_dir, data_dir, args.device)
         
@@ -109,7 +102,6 @@ def main(args=None):
         wandb.init(entity=entity_name, project=project_name, config=vars(config), 
                    name=config.run_name, dir=output_dir / "wandb")
 
-        # Save the config YAMLs to W&B
         wandb.save(str(features_path), base_path=features_path.parent, policy="now")
         wandb.save(str(params_path), base_path=params_path.parent, policy="now")
 
@@ -119,34 +111,27 @@ def main(args=None):
 
     # -------------------- MODEL --------------------
     with logger.step("🛠️ Building model..."):
-        # Build model outside the train loop
         model = build_model(config)
         wandb.log({"model/num_params": sum(p.numel() for p in model.parameters())}, commit=False)
 
-        # Define W&B metrics
         wandb.define_metric("epoch")
         wandb.define_metric("retrain_epoch")
         wandb.define_metric("val/loss", step_metric="epoch", summary="min")
         wandb.define_metric("val/neg_corr", step_metric="epoch", summary="min")
 
-        # Prepare checkpoint directory
         run_id = wandb.run.id
         logger.info(f"Run ID: {run_id}")
-        # Create a directory for checkpoints
+
         ckpt_dir = output_dir / "checkpoints" / run_id
         ckpt_dir.mkdir(parents=True, exist_ok=True)
 
-        # Save the model’s initial state
         save_initial_state(model, ckpt_dir / "initial_model.pt", ckpt_dir / "initial_random_state.pt")
 
-        # Watch the model
         wandb.watch(model, "val/neg_corr", log_graph=True, log_freq=200)
 
-        # Optimizer & scheduler created outside the loop
         with logger.step("⚙️ Creating optimizer & scheduler..."):
             optimizer, scheduler = create_optimizer_and_scheduler(model, config)
 
-        # Persist the config YAML to checkpoints directory
         config_path = ckpt_dir / "config.yaml"
         config.save(config_path)
 
@@ -157,12 +142,10 @@ def main(args=None):
     # -------------------- TRAIN --------------------
     with logger.step("🚀 Starting training loop..."):
         if args.profile:
-            # Run training under PyTorch profiler
             with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
                          record_shapes=True) as prof:
                 best_val_epoch = train_val_loop(model, optimizer, scheduler, train_loader,
                                                 valid_loader, ckpt_dir, config)
-            # Export Chrome trace for analysis
             prof.export_chrome_trace(str(ckpt_dir / "profiler_trace.json"))
             logger.info(f"📝 Profiling trace saved to {ckpt_dir / 'profiler_trace.json'}")
         else:

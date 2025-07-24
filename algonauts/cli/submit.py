@@ -183,8 +183,8 @@ def main():
         os.makedirs(submission_dir, exist_ok=True)
 
     device = "cuda"
-    # Determine checkpoints to process (single or ensemble)
     checkpoint_list = args.checkpoint
+
     # Load config from first checkpoint
     first_ckpt_dir = output_root / "checkpoints" / checkpoint_list[0]
     _, config = load_model_from_ckpt(
@@ -260,8 +260,6 @@ def main():
             if not np.isfinite(pred).all():
                 raise ValueError(f"Prediction for {subj} - {clip} contains non-finite values.")
 
-    # random_number = random.randint(0, 1000)
-    # name = f"{name}_{random_number}"
     output_file = submission_dir / f"{name}.npy"
     np.save(output_file, predictions, allow_pickle=True)
 

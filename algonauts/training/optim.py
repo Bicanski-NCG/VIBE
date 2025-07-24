@@ -1,6 +1,7 @@
 import torch
 import wandb
 
+
 def create_optimizer_and_scheduler(model, config):
     """Build AdamW optimiser and a warm‑up + cosine scheduler."""
     if getattr(model, "use_hrf_conv", False) and getattr(model, "learn_hrf", False):
@@ -14,7 +15,7 @@ def create_optimizer_and_scheduler(model, config):
         param_groups = [{"params": model.parameters(), "weight_decay": config.weight_decay}]
 
     optimizer = torch.optim.AdamW(param_groups, lr=config.lr)
-    # Log initial optimiser settings
+ 
     wandb.log({
         "train/initial_lr": config.lr,
         "train/weight_decay": config.weight_decay,

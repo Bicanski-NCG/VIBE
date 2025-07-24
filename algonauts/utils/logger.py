@@ -3,7 +3,9 @@ import logging
 from contextvars import ContextVar
 from contextlib import contextmanager
 
+
 _INDENT: ContextVar[int] = ContextVar("_INDENT", default=0)
+
 
 class IndentFilter(logging.Filter):
     """Prepend four spaces per nesting level to every log record."""
@@ -11,6 +13,7 @@ class IndentFilter(logging.Filter):
         indent = "    " * _INDENT.get()
         record.msg = f"{indent}{record.msg}"
         return True
+
 
 _logger = logging.getLogger("algonauts")
 _logger.setLevel(logging.INFO)
@@ -20,29 +23,33 @@ _handler.setFormatter(
 )
 _handler.addFilter(IndentFilter())
 _logger.addHandler(_handler)
-_logger.propagate = False  # don’t double-print if root has a handler
+_logger.propagate = False
 
-# ────────────────────────────────────────────────────────────────────
-# public helpers
-# ────────────────────────────────────────────────────────────────────
+
 def info(msg: str, *args, **kwargs):
     _logger.info(msg, *args, **kwargs)
+
 
 def warning(msg: str, *args, **kwargs):
     _logger.warning(msg, *args, **kwargs)
 
+
 def error(msg: str, *args, **kwargs):
     _logger.error(msg, *args, **kwargs)
+
 
 def debug(msg: str, *args, **kwargs):
     _logger.debug(msg, *args, **kwargs)
 
+
 def critical(msg: str, *args, **kwargs):
     _logger.critical(msg, *args, **kwargs)
+
 
 def open_step(msg: str):
     _logger.info(msg)
     _INDENT.set(_INDENT.get() + 1)
+
 
 def close_step(msg: str = "☑️ Done"):
     depth = _INDENT.get()
@@ -51,6 +58,7 @@ def close_step(msg: str = "☑️ Done"):
         return
     _logger.info(msg)
     _INDENT.set(depth - 1)
+
 
 @contextmanager
 def step(msg: str, closing_msg: str = "☑️ Done"):

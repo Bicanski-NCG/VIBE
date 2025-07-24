@@ -1,44 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from scipy.stats import gamma
 from algonauts.models.rope import PredictionTransformerRoPE
-
-
-# ──────────────────────────────────────────────────────────────
-# Gated‑Multimodal Unit – scalar gate per modality per time‑step
-# ──────────────────────────────────────────────────────────────
-class GMU(nn.Module):
-    """
-    Re‑weights each modality using a learned scalar gate g∈(0,1).
-    All modality tensors must share the same hidden_dim.
-    """
-    def __init__(self, modalities, hidden_dim: int):
-        super().__init__()
-        self.modalities = modalities
-        self.gate = nn.ModuleDict({
-            m: nn.Linear(hidden_dim, 1, bias=True)   # σ(wᵀh+b)
-            for m in modalities
-        })
-
-    def forward(self, proj_dict):
-        # proj_dict[m]: (B, T, D)
-        gated = {}
-        for m, h in proj_dict.items():
-            g = torch.sigmoid(self.gate[m](h))       # (B,T,1)
-            gated[m] = h * g                         # element‑wise
-        return gated
-
-
-def spm_hrf(tr: float, size: int):
-    length = tr * size
-    t = np.arange(0, length, tr)
-
-    peak1 = gamma.pdf(t, 6)
-    peak2 = gamma.pdf(t, 16)
-    hrf = peak1 - 0.5 * peak2
-    return hrf / np.sum(hrf)
 
 
 class ModalityFusionTransformer(nn.Module):
@@ -55,7 +18,6 @@ class ModalityFusionTransformer(nn.Module):
         use_transformer: bool = True,
         use_run_embeddings: bool = False,
         num_layers_projection: int = 1,
-        use_gmu: bool = False
     ):
         super().__init__()
         self.fuse_mode = fuse_mode
@@ -63,10 +25,6 @@ class ModalityFusionTransformer(nn.Module):
             modality: self.build_projection(dim, hidden_dim, num_layers_projection)
             for modality, dim in input_dims.items()
         })
-
-        self.use_gmu = use_gmu
-        if self.use_gmu:
-            self.gmu = GMU(list(input_dims.keys()), hidden_dim)
 
         self.subject_dropout_prob = subject_dropout_prob
         self.subject_embeddings = nn.Embedding(subject_count + 1, hidden_dim)
@@ -107,11 +65,9 @@ class ModalityFusionTransformer(nn.Module):
             name: self.projections[name](inputs[name])
             for name in self.projections
         }
-        if self.use_gmu:
-            projected_dict = self.gmu(projected_dict)
 
         projected = [projected_dict[name] for name in self.projections]
-        x = torch.stack(projected, dim=2)  # (B, T, num_modalities, D)
+        x = torch.stack(projected, dim=2)
 
         subject_ids = torch.tensor(subject_ids, device=x.device, dtype=torch.long)
         run_ids = torch.tensor(run_ids, device=x.device, dtype=torch.long)
@@ -144,83 +100,6 @@ class ModalityFusionTransformer(nn.Module):
         return fused
 
 
-class FixedPositionalEncoding(nn.Module):
-    def __init__(self, dim, max_len=600):
-        super().__init__()
-        pe = torch.zeros(max_len, dim)
-        position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, dim, 2).float() * (-torch.log(torch.tensor(10000.0)) / dim)
-        )
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        self.register_buffer("pe", pe)
-
-    def forward(self, x):
-        return x + self.pe[: x.size(1)].unsqueeze(0)
-
-
-class PredictionTransformer(nn.Module):
-    def __init__(
-        self,
-        input_dim=256,
-        output_dim=1000,
-        num_layers=2,
-        num_heads=16,
-        max_len=500,
-        dropout=0.3,
-    ):
-        super().__init__()
-        self.pos_encoder = FixedPositionalEncoding(input_dim, max_len)
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=input_dim,
-            nhead=num_heads,
-            dropout=dropout,
-            dim_feedforward=input_dim * 4,
-            batch_first=True,
-            activation="gelu",
-        )
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-        self.output_head = nn.Linear(input_dim, output_dim)
-
-    def forward(self, x, attn_mask):
-        x = self.pos_encoder(x)
-        causal_mask = None #torch.triu(
-        #    torch.ones(seq_len, seq_len, device=device), diagonal=1
-        #).bool()
-        x = self.transformer(x, mask=causal_mask, src_key_padding_mask=~attn_mask)
-        return self.output_head(x)
-
-class PredictionLSTM(nn.Module):
-    def __init__(self, input_dim, output_dim=1000, num_layers=2, dropout=0.3):
-        super().__init__()
-        hidden_dim = input_dim*2
-        self.lstm = nn.LSTM(
-            input_dim,
-            hidden_dim,
-            num_layers=num_layers,
-            dropout=dropout if num_layers > 1 else 0,
-            batch_first=True,
-            bidirectional=False,
-        )
-        self.output_head = nn.Linear(hidden_dim, output_dim)
-
-    def forward(self, x, attn_mask):
-        # Pack the sequence to handle variable-length sequences
-        lengths = attn_mask.sum(dim=1)
-        packed = nn.utils.rnn.pack_padded_sequence(x, lengths.cpu(), batch_first=True, enforce_sorted=False)
-
-        packed_output, _ = self.lstm(packed)
-
-        output, _ = nn.utils.rnn.pad_packed_sequence(
-            packed_output,
-            batch_first=True,
-            total_length=attn_mask.size(1)  # <<< Fix
-        )
-        return self.output_head(output)
-
-
-
 class FMRIModel(nn.Module):
     def __init__(
         self,
@@ -243,17 +122,11 @@ class FMRIModel(nn.Module):
         pred_heads=8,
         pred_dropout=0.3,
         rope_pct=1.0,
-        # HRF-related
-        use_hrf_conv=False,
-        learn_hrf=False,
-        hrf_size=8,
-        tr_sec=1.49,
         # padding
         num_pre_tokens: int = 0,
         n_prepend_zeros=10,
         # training
         mask_prob=0.2,
-        use_gmu: bool = False,
     ):
         """
         FMRIModel combines modality fusion and temporal prediction.
@@ -293,7 +166,6 @@ class FMRIModel(nn.Module):
             use_transformer=use_fusion_transformer,
             use_run_embeddings=use_run_embeddings,
             num_layers_projection=proj_layers,
-            use_gmu=use_gmu,
         )
 
         fused_dim = (
@@ -323,31 +195,7 @@ class FMRIModel(nn.Module):
         )
 
         self.n_prepend_zeros = n_prepend_zeros
-        
-        self.use_hrf_conv = use_hrf_conv
-        self.learn_hrf = learn_hrf
-        self.hrf_size = hrf_size
-
-        if use_hrf_conv:
-            self.hrf_conv = nn.Conv1d(
-                in_channels=output_dim,
-                out_channels=output_dim,
-                kernel_size=self.hrf_size,
-                padding=0,
-                groups=output_dim,
-                bias=False,
-            )
-            with torch.no_grad():
-                hrf = spm_hrf(tr=tr_sec, size=self.hrf_size)
-                # reshape to (output_dim, 1, kernel_size) and broadcast
-                hrf_weight = torch.tensor(hrf).view(1, 1, -1).repeat(output_dim, 1, 1)
-                self.hrf_conv.weight.copy_(hrf_weight)
-            self.hrf_conv.weight.requires_grad = learn_hrf
-            self.register_buffer("hrf_prior", hrf_weight.clone().detach())
-
-        else:
-            self.hrf_conv = nn.Identity()
-    
+            
         self.mask_prob = mask_prob
 
     def forward(self, features, subject_ids, run_ids, attention_mask):
@@ -373,7 +221,6 @@ class FMRIModel(nn.Module):
         )
         fused = torch.cat((zeros_pre_fused, fused), dim=-2)
 
-        # Extend attention_mask for prepended zeros (set to False/masked)
         attention_mask_pre = torch.zeros(
             attention_mask.shape[:-1] + (num_pre_post_timepoints,),
             device=attention_mask.device,
@@ -381,13 +228,11 @@ class FMRIModel(nn.Module):
         )
         attention_mask = torch.cat((attention_mask_pre, attention_mask), dim=-1)
 
-      
         if self.num_pre_tokens > 0:
             B = fused.size(0)
             prefix = self.pre_tokens.unsqueeze(0).expand(B, -1, -1)   # [B, T_p, D]
             fused = torch.cat([prefix, fused], dim=1)                 # [B, T_p+T, D]
 
-            # extend attention mask with valid (=True) entries
             prefix_mask = torch.ones(
                 B,
                 self.num_pre_tokens,
@@ -396,21 +241,12 @@ class FMRIModel(nn.Module):
             )
             attention_mask = torch.cat([prefix_mask, attention_mask], dim=1)  # [B, T_p+T]
 
-
         preds = self.predictor(fused, attention_mask)
 
         if self.num_pre_tokens > 0:
-            preds = preds[:, self.num_pre_tokens :, :] 
-
-        if self.use_hrf_conv:
-            preds = preds.transpose(1, 2)
-            preds = F.pad(preds, (self.hrf_size - 1, 0))
-            preds = self.hrf_conv(preds)
-            preds = preds.transpose(1, 2)
+            preds = preds[:, self.num_pre_tokens:, :] 
 
         # Remove the appended zeros from preds
-        preds = preds[..., num_pre_post_timepoints : preds.shape[-2],:] 
-        #preds = preds[..., num_pre_post_timepoints : preds.shape[-2] - num_pre_post_timepoints, :]
-
+        preds = preds[..., num_pre_post_timepoints:preds.shape[-2], :] 
 
         return preds

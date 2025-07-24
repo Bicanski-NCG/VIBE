@@ -7,31 +7,55 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 import warnings
-from tqdm import tqdm 
+from tqdm import tqdm
+
+from pathlib import Path
+from typing import Dict, Optional, Sequence, Union
+import logging
+
+EPS = 1e-6
+logger = logging.getLogger(__name__)
 
 class FMRI_Dataset(Dataset):
+    """
+    Multimodal fMRI ↔ feature dataset.
+
+    __getitem__ returns
+        subject_id : int  (0‑based)
+        run_id     : int
+        features   : Dict[str, Tensor]  shape (T, D_mod)
+        fmri       : Tensor            shape (T, V)
+        loss_mask  : Tensor            shape (T, V)
+        dataset_name : str
+
+    Key options
+    ----------
+    normalize_features
+        Z‑score each modality with global μ,σ.
+    modality_dropout_mode
+        • 'zeros'    : whole‑modality zero mask  
+        • 'gaussian' : replace with 𝒩(μ,σ²) noise (needs stats).
+    """
     def __init__(
         self,
-        root_folder_fmri,
-        feature_paths,
-        input_dims,
-        modalities,
-        noise_std=0.0,
-        normalization_stats=None,
-        oversample_factor=1,
-        samples=None,
-        normalize_bold=False,
-        modality_dropout_mode = 'zeros',
-        modality_dropout_prob = 0.1,
-        normalize_features = False,
-        loss_masks_path=None # None or paths
+        root_folder_fmri: Union[str, Path],
+        feature_paths: Dict[str, Union[str, Path]],
+        input_dims: Dict[str, int],
+        modalities: Sequence[str],
+        noise_std: float = 0.0,
+        normalization_stats: Optional[Dict[str, Dict[str, torch.Tensor]]] = None,
+        oversample_factor: int = 1,
+        samples: Optional[list] = None,
+        normalize_bold: bool = False,
+        modality_dropout_mode: str = 'zeros',
+        modality_dropout_prob: float = 0.1,
+        normalize_features: bool = False,
+        loss_masks_path: Optional[Union[str, Path]] = None
     ):
         super().__init__()
 
         self.root_folder = root_folder_fmri
         self.feature_paths = feature_paths  # Dict of {modality: path}
-
-        
 
         self.input_dims = input_dims
         self.modalities = modalities
@@ -41,41 +65,32 @@ class FMRI_Dataset(Dataset):
 
         self.noise_std = noise_std
         self.normalize_features = normalize_features
-        if (normalization_stats is None) and ((self. modality_dropout_mode =='gaussian') or (self.normalize_features)):
-            warnings.warn(f"No normalization stats provided but required for the options you chose. ' \
-            'Will try to fetch them from current working directory {os.getcwd()}")
+        if (normalization_stats is None) and ((self.modality_dropout_mode =='gaussian') or (self.normalize_features)):
+            warnings.warn(
+                f"No normalization stats provided but required for the chosen options. "
+                f"Will try to fetch them from {os.getcwd()}."
+            )
             fname = 'normalization_stats.pt'
-            
             normalization_stats_valid = False
 
             if os.path.isfile('normalization_stats.pt'):
                 normalization_stats_valid = True
-
-                print('Found file at', os.getcwd(),fname)
+                logger.info("Found normalization stats at %s/%s", os.getcwd(), fname)
                 normalization_stats = torch.load(fname)
-                for modality,path in feature_paths.items():
+                for modality, path in feature_paths.items():
                     if not normalization_stats.get(modality):
                         warnings.warn("Did not find all features of this dataset in the normalization_stats.pt. Will recompute them to be safe.")
                         normalization_stats_valid = False
                         break
-
-
-
             if not normalization_stats_valid:
                 warnings.warn('No valid normalization stats provided. Will compute normalization stats and save in current directory. This might take a while.')
                 normalization_stats = compute_statistics(feature_paths)
-                torch.save(normalization_stats,fname)
-
-
-
-
-
-
+                torch.save(normalization_stats, fname)
 
         self.normalization_stats = normalization_stats
 
         self.oversample_factor = oversample_factor
-        self.normalize_bold = normalize_bold  # enable/disable run‑wise z‑score
+        self.normalize_bold = normalize_bold
 
         self._h5_cache = {}  # Cache for h5 files to avoid reopening
 
@@ -130,10 +145,10 @@ class FMRI_Dataset(Dataset):
                             "has_multiple_runs": has_multiple_runs
                         }
                         self.samples.append(sample)
+
         self.loss_masks_path = loss_masks_path
         if loss_masks_path:
             self.loss_masks = torch.load(loss_masks_path)
-            #should be a dictionary with (subject_id,dataset_name)
         else:
             self.loss_masks = None
     def __len__(self):
@@ -147,21 +162,20 @@ class FMRI_Dataset(Dataset):
         self.samples = [s for s in self.samples if filter_fn(s)]
         return self
 
-    def find_feature_file(self, modailty, file_name):
+    def find_feature_file(self, modality, file_name):
         try:
-            return self._feature_index[modailty][file_name]
+            return self._feature_index[modality][file_name]
         except KeyError:
             # feature may have prefixes like "friends_" or "movies10_"
-            for key in self._feature_index[modailty].keys():
+            for key in self._feature_index[modality].keys():
                 if file_name in key:
-                    return self._feature_index[modailty][key]
-            else: # If no match found, raise an error
+                    return self._feature_index[modality][key]
+            else:
                 raise FileNotFoundError(
-                    f"Feature file for {file_name} not found in {modailty} features."
+                    f"Feature file for {file_name} not found in {modality} features."
                 )
 
     def normalize(self, data, mean, std):
-    
         return (data - mean) / std
     
     def _get_h5(self, path):
@@ -188,16 +202,15 @@ class FMRI_Dataset(Dataset):
         else:
             raise ValueError(f"Unknown feature file extension: {path}")
     
-    def get_loss_mask(self,dataset_name,subject_id,fmri_file):
+    def get_loss_mask(self, subject_key: str, dataset_name: str, fmri_tensor: torch.Tensor):
         if self.loss_masks:
-
-            loss_mask = self.loss_masks.get((subject_id,dataset_name),None)
+            loss_mask = self.loss_masks.get((subject_key, dataset_name), None)
         else:
-            loss_mask =None
+            loss_mask = None
 
         if loss_mask is None:
-            loss_mask = torch.ones_like(fmri_file)
-       
+            loss_mask = torch.ones_like(fmri_tensor)
+
         return loss_mask
 
     def __getitem__(self, idx):
@@ -213,16 +226,14 @@ class FMRI_Dataset(Dataset):
         fmri_response_tensor = torch.tensor(
             h5[dataset_name][:], dtype=torch.float32
         )
-        
-        # ---- Run‑wise (per‑key) z‑scoring ---------------------------------
+
         if self.normalize_bold:
             mu    = fmri_response_tensor.mean(dim=0, keepdim=True)
-            sigma = fmri_response_tensor.std(dim=0, keepdim=True) + 1e-6
+            sigma = fmri_response_tensor.std(dim=0, keepdim=True) + EPS
             fmri_response_tensor = (fmri_response_tensor - mu) / sigma
-        # -------------------------------------------------------------------
 
         features = {}
-        min_samples = fmri_response_tensor.shape[0]
+        fmri_len = fmri_response_tensor.shape[0]
 
         for modality, root_path in self.feature_paths.items():
             path = self.find_feature_file(modality, file_name)
@@ -231,30 +242,20 @@ class FMRI_Dataset(Dataset):
             if data.isnan().any():
                 data = torch.nan_to_num(data, nan=0.0)
 
-            if self.modality_dropout_prob>0: 
-                if self.modality_dropout_mode =='zeros':
+            if self.modality_dropout_prob > 0: 
+                if self.modality_dropout_mode == 'zeros':
                     if float(torch.rand(1)) < self.modality_dropout_prob:
-                        # Replace with zeros; keeps tensor shape & device
                         data = torch.zeros_like(data)
-
-
                 elif self.modality_dropout_mode == 'gaussian':
                     if float(torch.rand(1)) < self.modality_dropout_prob:
-                        
                         X = torch.randn_like(data)
                         mean = self.normalization_stats[modality]['mean']
                         std = self.normalization_stats[modality]['std']
-                        data = mean + std*X
-
-
-
-
-
+                        data = mean + std * X
 
             if (self.normalize_features and self.normalization_stats 
                 and self.normalization_stats.get(modality)
-                  and self.normalization_stats.get(modality).get('mean') ):
-                
+                and self.normalization_stats.get(modality).get('mean')):
                 data = self.normalize(
                     data,
                     self.normalization_stats[modality]["mean"],
@@ -264,17 +265,27 @@ class FMRI_Dataset(Dataset):
             if self.noise_std > 0:
                 data += torch.randn_like(data) * self.noise_std
 
-            min_samples = min(min_samples, data.shape[0])
+            if data.shape[0] < fmri_len:
+                pad_size = fmri_len - data.shape[0]
+                pad_shape = (pad_size,) + data.shape[1:]
+                data = torch.cat(
+                    [data, torch.zeros(pad_shape, dtype=data.dtype)], dim=0
+                )
+            else:
+                data = data[:fmri_len]
             features[modality] = data
 
-        # Truncate all to same length
-        for key in features:
-            features[key] = features[key][:min_samples]
-        fmri_response_tensor = fmri_response_tensor[:min_samples]
+        loss_mask = self.get_loss_mask(sample_info["subject_id"], dataset_name, fmri_response_tensor)
 
-        loss_mask = self.get_loss_mask(dataset_name,subject_id,fmri_response_tensor)
+        return subject_id, run_id, features, fmri_response_tensor, loss_mask, dataset_name
 
-        return subject_id, run_id, features, fmri_response_tensor,loss_mask, dataset_name
+    def __del__(self):
+        for h in self._h5_cache.values():
+            try:
+                h.close()
+            except Exception:
+                pass
+        self._h5_cache.clear()
 
 
 def compute_mean_std(dataset):
@@ -286,7 +297,7 @@ def compute_mean_std(dataset):
     for modality, data in sums.items():
         data_all = torch.cat(data, dim=0)
         stats[f"{modality}_mean"] = data_all.mean(dim=0)
-        stats[f"{modality}_std"] = data_all.std(dim=0) + 1e-8
+        stats[f"{modality}_std"] = data_all.std(dim=0) + EPS
     return stats
 
 
@@ -351,7 +362,7 @@ def split_dataset_by_name(dataset, val_name="06", val_run="all",
         samples=val_samples,
         normalize_bold=normalize_validation_bold,
         modality_dropout_mode = dataset.modality_dropout_mode,
-        modality_dropout_prob =  0.0, #no dropout in validation set
+        modality_dropout_prob =  0.0,
         normalize_features = dataset.normalize_features,
         loss_masks_path=dataset.loss_masks_path
     )
@@ -374,7 +385,6 @@ def collate_fn(batch):
 
     loss_mask_padded = pad_sequence(loss_mask, batch_first=True, padding_value=0)
 
-    # Example attention mask (you can adapt this per modality if needed)
     seq_lengths = [next(iter(f.values())).shape[0] for f in features_list]
     max_len = max(seq_lengths)
     idx = torch.arange(max_len)
@@ -439,28 +449,23 @@ def make_group_weights(dataset, filter_on: str):
     # Per‐stimulus weights (one group per dataset_name)
     w_stim = make_group_weights(train_ds, filter_on="dataset_name")
     """
-    # 1) Extract lengths (number of TRs) and the grouping‐key values
     lengths = torch.tensor(
         [sample["num_samples"] for sample in dataset.samples],
         dtype=torch.float32,
     )
 
-    # Ensure filter_on exists in each sample:
     try:
         values = [sample[filter_on] for sample in dataset.samples]
     except KeyError:
         raise KeyError(f"Key '{filter_on}' not found in sample dict keys.")
 
-    # 2) Build a mapping from each distinct key‐value → list of indices
     value_to_indices = {}
     for idx, v in enumerate(values):
         value_to_indices.setdefault(v, []).append(idx)
 
-    # 3) Allocate output weight tensor
     N = len(dataset.samples)
     weights = torch.zeros(N, dtype=torch.float32)
 
-    # 4) For each group, normalize within that group
     for v, idx_list in value_to_indices.items():
         group_lengths = lengths[idx_list]
         subtotal = float(group_lengths.sum().item())
@@ -471,21 +476,15 @@ def make_group_weights(dataset, filter_on: str):
             for i in idx_list:
                 weights[i] = uniform_w
         else:
-            # w[i] = lengths[i] / total_length_of_this_group
             weights[idx_list] = group_lengths / subtotal
 
     return weights
 
 
-
-
-def compute_statistics(feature_paths, cov_univariate=True,include_ood = False):
-
+def compute_statistics(feature_paths, cov_univariate=True, include_ood=False):
     normalization_stats = {}
 
     for feature, path in tqdm(feature_paths.items()):
-        #path = os.path.join(config.features_dir,path)
-        #print(path)
         M = 0
         mean = None
         M2 = None  # For Welford's algorithm to compute variance/covariance
@@ -502,19 +501,18 @@ def compute_statistics(feature_paths, cov_univariate=True,include_ood = False):
                 elif full_path.endswith('.pt'):
                     data = torch.load(full_path, map_location='cpu').float()
                 else:
-                    continue # Skip non-data files
+                    continue  # Skip non-data files
 
                 N = data.shape[-2]
 
                 if M == 0:
                     mean = torch.mean(data, dim=-2)
                     if cov_univariate:
-                        M2 = torch.sum((data - mean.unsqueeze(-2))**2, dim=-2)
+                        M2 = torch.sum((data - mean.unsqueeze(-2)) ** 2, dim=-2)
                     else:
                         centered_data = data - mean.unsqueeze(-2)
                         M2 = torch.matmul(centered_data.transpose(-1, -2), centered_data)
                 else:
-                    mean.clone()
                     mean, M2_new_contribution = increment_mean_and_M2(data, mean, M, cov_univariate)
                     M2 += M2_new_contribution
 
@@ -522,7 +520,7 @@ def compute_statistics(feature_paths, cov_univariate=True,include_ood = False):
 
         if M > 0:
             if cov_univariate:
-                std = torch.sqrt(M2 / (M-1))
+                std = torch.sqrt(M2 / (M - 1) + EPS)
             else:
                 # For covariance, M2 is already the sum of outer products of centered data
                 # We need to divide by M-1 for sample covariance, or M for population covariance.
@@ -531,36 +529,31 @@ def compute_statistics(feature_paths, cov_univariate=True,include_ood = False):
                 if M > 1:
                     std = M2 / (M - 1)
                 else:
-                    std = torch.zeros_like(M2) # Or raise an error, depending on desired behavior
-        
+                    std = torch.zeros_like(M2)  # Or raise an error, depending on desired behavior
+
             normalization_stats[feature] = {"mean": mean, "std": std}
 
     return normalization_stats
 
+
 def increment_mean_and_M2(data, mean, M, cov_univariate):
     N = data.shape[-2]
-    
     # Current mean of the new batch
     batch_mean = torch.mean(data, dim=-2)
-
     # Calculate new combined mean
     new_mean = (M * mean + N * batch_mean) / (M + N)
-
     if cov_univariate:
         # Update M2 (sum of squared differences) using a stable formula
         delta = batch_mean - mean
-        M2_new_contribution = torch.sum((data - batch_mean.unsqueeze(-2))**2, dim=-2)
-        M2_new_contribution += M * N * delta**2 / (M + N)
+        M2_new_contribution = torch.sum((data - batch_mean.unsqueeze(-2)) ** 2, dim=-2)
+        M2_new_contribution += M * N * delta ** 2 / (M + N)
     else:
         # Update M2 (sum of outer products of centered data) for covariance
         # M2_B (sum of outer products for the new batch relative to its own mean)
         centered_data_batch = data - batch_mean.unsqueeze(-2)
         M2_new_batch = torch.matmul(centered_data_batch.transpose(-1, -2), centered_data_batch)
-
         # Correction term for combining M2 values
         # delta between old mean and new batch mean
         delta_mean = batch_mean - mean
-        
         M2_new_contribution = M2_new_batch + (M * N / (M + N)) * torch.outer(delta_mean, delta_mean)
-
     return new_mean, M2_new_contribution

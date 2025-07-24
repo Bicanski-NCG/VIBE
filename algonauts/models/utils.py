@@ -46,14 +46,11 @@ def load_model_from_ckpt(model_ckpt_path, params_path,device = None):
     if not params_path.exists():
         raise FileNotFoundError(f"Params file not found: {params_path}")
 
-    # read hyper-parameters
     with params_path.open("r") as fp:
         cfg_dict = yaml.safe_load(fp)
 
-    # rebuild Config and model
     config = Config(**cfg_dict)
 
-    # Modalities list contains the order of modalities in the model.
     modality_order = config.modalities
     config.input_dims = {modality: config.input_dims[modality] for modality in modality_order if modality in config.input_dims}
     if device:
@@ -79,17 +76,11 @@ def build_model(config):
         proj_layers=config.proj_layers,
         fuse_mode=config.fuse_mode,
         subject_count=config.subject_count,
-        use_gmu=config.use_gmu,
         # temporal predictor hyper-params
         pred_layers=config.pred_layers,
         pred_heads=config.pred_heads,
         pred_dropout=config.pred_dropout,
         rope_pct=config.rope_pct,
-        # HRF-related
-        use_hrf_conv=config.use_hrf_conv,
-        learn_hrf=config.learn_hrf,
-        hrf_size=config.hrf_size,
-        tr_sec=config.tr_sec,
         # training
         mask_prob=config.mask_prob,
         # padding

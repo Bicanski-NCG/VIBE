@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import List, Dict, Optional
 
+
 @dataclass
 class Config:
     # ─── CLI & I/O ───
@@ -120,11 +121,9 @@ class Config:
         """
         import yaml
 
-        # load features.yaml
         with open(features_path, "r") as f:
             features = yaml.safe_load(f)
 
-        # load params.yaml
         with open(params_path,"r") as f:
             params = yaml.safe_load(f)
 

@@ -21,11 +21,6 @@ def masked_negative_pearson_loss(pred, target, mask, eps=1e-8, zero_center=True,
     return -corr.mean()
 
 
-# ------------------------------------------------------------------
-# helpers
-# ------------------------------------------------------------------
-
-
 def _centre(x, mask=None, eps=1e-8):
     """centre over time, keep padded steps at 0."""
     if mask is not None:

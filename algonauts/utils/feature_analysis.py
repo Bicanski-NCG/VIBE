@@ -1,9 +1,7 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
-import numpy as np
 import torch
 import wandb
-from sklearn.linear_model import RidgeCV
 import random
 from captum.attr import ShapleyValueSampling
 
@@ -48,7 +46,6 @@ def shapley_captum(model, val_loader, device, modalities,
     """
     model.eval().requires_grad_(False)
 
-    # ---- Wrap model.forward so Captum gets tensors/tuples ----------
     def forward_packed(*args):
         """
         Captum calls this with
@@ -61,7 +58,7 @@ def shapley_captum(model, val_loader, device, modalities,
           4. Return the vector of r's  – one scalar per batch element.
         """
         n_mod = len(modalities)
-        feats_cpu   = args[:n_mod]           # tuple of modality tensors
+        feats_cpu   = args[:n_mod]
         fmri_true   = args[n_mod]
         attn_mask   = args[n_mod + 1]
         subj_ids    = args[n_mod + 2]
@@ -72,11 +69,10 @@ def shapley_captum(model, val_loader, device, modalities,
         subj_ids  = subj_ids
         run_ids   = run_ids
         attn_mask = attn_mask.to(device)
-        fmri_true = fmri_true.to(device)     # (B, V)
+        fmri_true = fmri_true.to(device)
 
-        preds = model(feats_gpu, subj_ids, run_ids, attn_mask)  # (B, V)
+        preds = model(feats_gpu, subj_ids, run_ids, attn_mask)
 
-        # -------- per‑sample Pearson correlation ---------------------
         r_batch = -masked_negative_pearson_loss(
             preds, fmri_true, attn_mask,
             zero_center=True, network_mask=None
@@ -85,24 +81,21 @@ def shapley_captum(model, val_loader, device, modalities,
 
     attr_engine = ShapleyValueSampling(forward_packed)
 
-    # -------- iterate over the entire validation loader --------------
     phi_sum = {m: 0.0 for m in modalities}
     n_batches = 0
-    n_samples = round(n_samples / len(modalities))  # samples per modality
+    n_samples = round(n_samples / len(modalities))
 
     for batch in val_loader:
-        # probabilistic subsampling of batches
         if keep_frac < 1.0 and random.random() > keep_frac:
             continue
         packed_inputs = tuple(batch[m].to(device, non_blocking=True) for m in modalities)
         baselines     = tuple(torch.zeros_like(t) for t in packed_inputs)
 
-        # gather any extra batch‑specific tensors the model expects
         extras = [
-            batch["fmri"].to(device, non_blocking=True),  # ground‑truth fMRI
-            batch["attention_masks"].to(device, non_blocking=True),  # attention mask
-            batch["subject_ids"],  # subject IDs
-            batch["run_ids"]  # run IDs
+            batch["fmri"].to(device, non_blocking=True),
+            batch["attention_masks"].to(device, non_blocking=True),
+            batch["subject_ids"],
+            batch["run_ids"]
         ]
         additional_forward_args = tuple(extras)
 
@@ -121,7 +114,6 @@ def shapley_captum(model, val_loader, device, modalities,
             perturbations_per_eval=1,
         )
 
-        # accumulate mean attribution per modality
         for m, a in zip(modalities, attributions):
             phi_sum[m] += a.mean().item()
         n_batches += 1
@@ -129,10 +121,8 @@ def shapley_captum(model, val_loader, device, modalities,
     if n_batches == 0:
         raise RuntimeError("keep_frac too small ‒ no batches sampled.")
 
-    # average across batches
     phi = {m: v / n_batches for m, v in phi_sum.items()}
 
-    # ---- W&B bar chart of per‑modality importance -------------------
     bar_table = wandb.Table(data=[[k, v] for k, v in phi.items()],
                             columns=["modality", "phi"])
     fig, ax = plt.subplots(figsize=(6, 3))
@@ -161,7 +151,6 @@ def feature_single_ablation(model, val_loader, device, base_r):
         proj[0].weight.copy_(W0)
         proj[0].bias.copy_(b0)
 
-    # bar‑plot
     abl_table = wandb.Table(data=[[k, v] for k, v in delta_dict.items()],
                             columns=["block", "delta_r"])
     fig, ax = plt.subplots(figsize=(8, 4))
@@ -201,44 +190,6 @@ def feature_pairwise_redundancy(model, val_loader, device, base_r, delta_dict, b
     plt.close(fig)
 
 
-def feature_partial_r2(model, val_loader, device, blocks):
-    """Variance partition; logs bar chart."""
-    X_parts={b:[] for b in blocks}
-    Y_parts=[]
-    with torch.no_grad():
-        for batch in val_loader:
-            feats={k:batch[k].to(device) for k in val_loader.dataset.modalities}
-            fused=model.encoder(feats,batch["subject_ids"],batch["run_ids"])
-            attn=batch["attention_masks"].bool().to(device)
-            fused=fused[attn]
-            Y_parts.append(batch["fmri"][attn.cpu()])
-            token_cnt=len(blocks)+1+int(model.encoder.use_run_embeddings)
-            H_tok=fused.size(-1)//token_cnt
-            for i,b in enumerate(blocks):
-                col=slice(i*H_tok,(i+1)*H_tok)
-                X_parts[b].append(fused[:,col].cpu())
-    X_block={b:torch.cat(v).numpy() for b,v in X_parts.items()}
-    Y=torch.cat(Y_parts).numpy()
-    XK=np.hstack([X_block[b] for b in blocks])
-    partial={}
-    alphas=np.logspace(2,4,5)
-    for b in blocks:
-        red=np.hstack([X_block[bb] for bb in blocks if bb!=b])
-        r_full=RidgeCV(alphas,cv=3,scoring="r2").fit(XK,Y).score(XK,Y)
-        r_red =RidgeCV(alphas,cv=3,scoring="r2").fit(red,Y).score(red,Y)
-        partial[b]=r_full-r_red
-    fig,ax=plt.subplots(figsize=(8,4))
-    ax.bar(list(partial.keys()),list(partial.values()))
-    ax.set_xticklabels(partial.keys(),rotation=45,ha="right")
-    ax.set_ylabel("Partial R²")
-    ax.set_title("Unique variance per block")
-    plt.tight_layout()
-    wandb.log({"partial_r2/bar_chart":wandb.Image(fig)})
-    plt.close(fig)
-    return partial
-
-
-# ------------------------------------------------------------
 def run_feature_analyses(model, val_loader, device):
     """
     Runs three lightweight post‑hoc analyses on the *validation* set:
@@ -253,11 +204,9 @@ def run_feature_analyses(model, val_loader, device):
     blocks = list(model.encoder.projections.keys())
     EXACT_CUTOFF = 6
 
-    # ---------- baseline ----------------------------------------------
     base_r = evaluate_corr(model, val_loader, device=device).mean().item()
     wandb.log({"diag/baseline_r": base_r})
 
-    # ---------- analyses ----------------------------------------------
     with logger.step("🔹 Leave‑one‑block ablation"):
         delta_dict = feature_single_ablation(model, val_loader, device, base_r)
 
@@ -267,6 +216,3 @@ def run_feature_analyses(model, val_loader, device):
     if len(blocks) <= EXACT_CUTOFF:
         with logger.step("🔹 Pairwise redundancy"):
             feature_pairwise_redundancy(model, val_loader, device, base_r, delta_dict, blocks)
-
-    # with logger.step("🔹 Partial R² variance partition"):
-    #     feature_partial_r2(model, val_loader, device, blocks)

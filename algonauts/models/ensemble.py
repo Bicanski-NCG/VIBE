@@ -80,7 +80,6 @@ class ROIAdaptiveEnsemble(nn.Module):
         super().__init__()
         self.device = torch.device(f"cuda:{random.randrange(torch.cuda.device_count())}") if torch.cuda.is_available() else torch.device("cpu")
 
-
         # Preload one model per unique epoch in roi_to_epoch
         self.roi_to_epoch = roi_to_epoch
         self.roi_labels = np.array(roi_labels, dtype="<U20")

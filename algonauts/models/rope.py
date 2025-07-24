@@ -1,7 +1,7 @@
 import torch
 from torch import nn
-from labml_nn.transformers.rope import RotaryPositionalEmbeddings   # ← already in labml-nn
-# If you don’t have labml-nn installed, just copy the implementation from the file you attached.
+from labml_nn.transformers.rope import RotaryPositionalEmbeddings
+
 
 class RoPEMultiheadAttention(nn.Module):
     def __init__(self, embed_dim: int, num_heads: int,
@@ -81,6 +81,7 @@ class RoPEEncoderLayer(nn.Module):
         x = x + self.dropout(self.ff(x))
         return self.norm2(x)
 
+
 class PredictionTransformerRoPE(nn.Module):
     def __init__(self,
                  input_dim=256,
@@ -115,10 +116,6 @@ class PredictionTransformerRoPE(nn.Module):
         attn_mask : [batch, seq_len] – **True for real tokens, False for pads**
         """
         key_padding_mask = ~attn_mask          # True = PAD (matches our attention fn)
-        # causal = torch.triu(
-        #     torch.ones(seq_len, seq_len, device=device, dtype=torch.bool), 1
-        # )
-
         causal = None
 
         for layer in self.layers:

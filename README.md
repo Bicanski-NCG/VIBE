@@ -1,234 +1,93 @@
-# 🧠 Algonauts Decoding
+# VIBE: Video‑Input Brain Encoder for fMRI Response Modeling
 
-> End-to-end pipeline for voxel-wise decoding of fMRI time-series from
-> multimodal stimulus features (audio · video · text).
+> End-to-end pipeline for voxel-wise decoding of fMRI time-series from multimodal stimulus features (audio · video · text).
+> The codebase was built for the **Algonauts 2025 Challenge** and is being released to foster open research.
 
-## Directory layout
+## Installation
 
-```
-Algonauts-Decoding
-├── algonauts
-│   ├── cli
-│   │   ├── fit.py                     <- Entrypoint for full train + retrain
-│   │   ├── make_submission.py         <- Entrypoint for inference on season 7
-│   │   ├── retrain.py                 <- Entrypoint for retrainin on full dataset
-│   │   └── train.py                   <- Entrypoint for train-validation loop
-│   ├── data
-│   │   ├── data.py                    <- Dataset
-│   │   └── loader.py                  <- Data loaders for train-val / full dataset
-│   ├── features                       <- Feature extractors
-│   ├── models
-│   │   ├── fmri.py                    <- Main FMRIModel
-│   │   ├── rope.py                    <- RoPE models
-│   │   └── utils.py                   <- Model utils
-│   ├── training
-│   │   ├── loop.py                    <- Train/val and retrain loops
-│   │   ├── losses.py                  <- Loss functions 
-│   │   ├── metrics.py                 <- Data loaders for train-val / full dataset
-│   │   └── optim.py                   <- Scheduler / optimizer 
-│   └── utils                          <- Util functions
-├── configs
-│   ├── features.yaml                  <- Feature specification for model
-│   ├── params.yaml                    <- Model and training parameters
-│   └── sweep.yaml                     <- Parameter specs for WandB sweeps
-├── data
-│   ├── features                       <- Extracted features (~100 GB)
-│   │   ├── Audio
-│   │   ├── Emotional
-│   │   ├── Omni
-│   │   ├── Text
-│   │   └── Visual
-│   ├── outputs                        <- Output files
-│   │   ├── checkpoints
-│   │   ├── job_logs
-│   │   ├── submissions
-│   │   └── wandb
-│   └── raw                       
-│       ├── fmri
-│       └── stimuli
-├── notebooks
-├── scripts
-│   ├── setup_end.sh.example           <- Sample environment setup
-│   ├── fit.sh                         <- SLURM scripts for launching the entrypoints
-│   ├── retrain.sh
-│   ├── submission.sh
-│   ├── sweep.sh
-│   └── train.sh
-└── tests
-```
+1. Download stimulus materials and fMRI data from the [official Algonauts repository](https://algonautsproject.com/braindata.html).
+2. Clone and install the `vibe` package from this repository using your favourite package manager.
+3. Set the environment variables to let the package know where the data is stored (see below).
 
-## Install 
-
-To intstall the python env, follow these steps:
-
-1. Install uv: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-2. Load conda module: `module load anaconda/3/2023.03`
-3. Sync the venv: `uv sync`
-4. Set up WandB: `wandb login`
-
-## Setup cluster
-
-To get started with running the model on the MPCDF Raven cluster, first make a copy of the `env.sh.example` file as `env.sh` and edit the paths to data directories in that file:
-```
-#!/bin/bash
-
-module purge
-module load anaconda/3/2023.03
-
-# The following command replaces `conda init` for the current session
-# without touching the .bashrc file:
-eval "$(conda shell.bash hook)"
-
-export FEATURES_DIR="/path/to/features"
-export DATA_DIR="/path/to/fmri"
-export OUTPUTS_DIR="/path/to/outputs"
-export WANDB_ENTITY="ncg-algonauts" # (team) or username that owns the project
-export WANDB_PROJECT="fmri-model"   # project name
-```
-You can also add whatever other setup you want for all the runs. Now, you can use the packaged slurm scripts to launch jobs. By default the scripts will look for features in directories specified in these environment variables. If is possible to override these with parameters to the scripts as detailed below.
-
-## Training model
-
-To start training-validation loop, run `algonauts-train`, or start a batch job with `scripts/train.sh`.
+## Directory Layout
 
 ```
-usage: algonauts-train [-h] [--features FEATURES] [--features_dir FEATURES_DIR] [--data_dir DATA_DIR] [--params PARAMS] [--seed SEED] [--name NAME] [--device DEVICE] [--wandb_project WANDB_PROJECT] [--diagnostics]
-
-Training entrypoint
-
-options:
-  -h, --help            show this help message and exit
-  --features FEATURES   Path to features YAML file (default: configs/features.yaml)
-  --params PARAMS       Path to training parameters YAML file (default: configs/params.yaml)
-  --features_dir FEATURES_DIR
-                        Directory for features, overrides FEATURES_DIR environment variable
-  --data_dir DATA_DIR   Directory for fMRI data, overrides DATA_DIR environment variable
-  --checkpoint_dir CHECKPOINT_DIR
-                        Directory containing checkpoints, overrides CHECKPOINT_DIR environment variable
-  --seed SEED           Random seed for reproducibility
-  --name NAME           Run name for W&B
-  --device DEVICE       Device to use for training (default: cuda)
-  --wandb_project WANDB_PROJECT
-                        W&B project name
-  --no_diagnostics      Skip diagnostics after training
+Algonauts-Decoding/
+├── vibe/                     # Python package
+│   ├── cli/                  # Entry‑points (train, retrain, fit, submit, merge)
+│   ├── data/                 # Dataset, loader, collate
+│   ├── models/               # Decoder, ensembling, utilities
+│   ├── training/             # Loops, losses, metrics
+│   └── utils/                # Logging, adjacency, HRF, misc.
+├── features/                 # Audio / video / text feature extraction
+├── configs/                  # YAML hyper‑parameters
+└── scripts/                  # Slurm & helper bash scripts
 ```
 
-### Override local paths
+## Quick Start
 
-To specify alternative data locations, either set the appropriate environment variables, or specify the correct path using the flags above.
+1. **Obtain data and features**
 
-### Parameters & feature specification
+   * Download the Algonauts 2024 dataset and extract it to `DATA_DIR`.
+   * Extract features using `features.*` scripts.
 
-Parameters and features are loaded from the `params.yaml` and `features.yaml` files respectively. Pass the locations with the `--params` and `--features` options. By default, the script will look in `configs` directory.
+2. **Environment variables**:
 
-## Retrain model
+   Set environment variables to link to the data location on your system. Make a copy of the `scripts/env.sh.example` file and change the paths to point to the correct locations. This file is loaded when the scripts in `scripts/` are launched. Make sure the environment variables are set in your current session when running without the scripts.
 
-To start full retrain loop, run `algonauts-retrain`, or start a batch job with `scripts/retrain.sh`.
+   Example environmental variables:
+   ```bash
+   export FEATURES_DIR="/path/to/features"       # Directory where the features are saved/stored
+   export DATA_DIR="/path/to/fmri"               # Directory where the fMRI data is stored
+   export OUTPUTS_DIR="/path/to/outputs"         # Directory where outputs (checkpoints, submission-files, etc.) will be saved
+   export WANDB_ENTITY="ncg-algonauts"           # (team) or username that owns the project
+   export WANDB_PROJECT="fmri-model"             # project name
+   ```
 
-```
-usage: algonauts-retrain [-h] [--checkpoint CHECKPOINT] [--output_dir OUTPUT_DIR] [--wandb_project WANDB_PROJECT] [--device DEVICE] [--diagnostics]
+3. Launch full training on SLURM cluster:
 
-Retrain a model on the full dataset after initial training
+   Scripts for running the model on a SLURM cluster can be found in the `scripts/` directory.
+  
+   To train the full model used in competition, run `scripts/fit_all.sh` to launch training of 4 separate 20 model ensembles. You may need to adjust the corresponding slurm scripts to fit your particular cluster.
+   Corresponding fuctions are available for making submission files for all the models (`scripts/submit_all.sh`) and merging model predictions into the final submission (`scripts/merga_all.sh`). **NOTE**: this is very compute intensive and may take a long time to complete.
 
-options:
-  -h, --help            show this help message and exit
-  --checkpoint CHECKPOINT
-                        Model checkpoint (same as wandb run ID)
-  --output_dir OUTPUT_DIR
-                        Root directory for outputs & checkpoints (default $OUTPUT_DIR or data/outputs)
-  --wandb_project WANDB_PROJECT
-                        W&B project name
-  --device DEVICE       Device to use for training (default: cuda)
-  --diagnostics         Plot diagnostics after retraining
-```
+### CLI
 
-## Fit model
+The package exports the following CLI commands that are used to run training and inference.
 
-The `algonauts-fit` command launches training and retraining sequentially for the same model.
+`vibe-train` – Train the decoder on the standard train/validation split with the hyper‑parameters and feature streams defined in the YAML configs.
 
-```
-usage: algonauts-fit [-h] [--features FEATURES] [--params PARAMS] [--features_dir FEATURES_DIR] [--data_dir DATA_DIR] [--output_dir OUTPUT_DIR] [--seed SEED] [--name NAME] [--device DEVICE]
-                     [--wandb_project WANDB_PROJECT] [--diagnostics]
+`vibe-retrain` – Retrain the best checkpoint on all available data (train + val) for final submission.
 
-Fit a model to the dataset
+`vibe-fit` – Convenience function for running train and retain on same model.
 
-options:
-  -h, --help            show this help message and exit
-  --features FEATURES   Path to features YAML file
-  --params PARAMS       Path to training parameters YAML file
-  --features_dir FEATURES_DIR
-                        Directory with extracted features (default $FEATURES_DIR or data/features)
-  --data_dir DATA_DIR   Directory with raw fMRI data (default $DATA_DIR or data/raw/fmri)
-  --output_dir OUTPUT_DIR
-                        Root directory for outputs & checkpoints (default $OUTPUT_DIR or data/outputs)
-  --seed SEED           Random seed for reproducibility
-  --name NAME           Run name for W&B
-  --device DEVICE       Device to use for training (default: cuda)
-  --wandb_project WANDB_PROJECT
-                        W&B project name
-  --diagnostics         Plot diagnostics after training
-```
+`vibe-submit` – Run inference on the test set and package the predictions into an Algonauts‑compatible ZIP archive.
 
-## Running a parameter sweep
+`vibe-merge` – Merge multiple prediction files (e.g. per‑ROI or per‑fold) into a single submission.
 
-Setup the sweep configuration in a yaml file. Set the parameter choices to sweep over. A sweep template might look like this:
-```
-program: train.py
-name: sweep_name
-method: bayes
+## Configuration
 
-metric:
-  goal: minimize
-  name: val/neg_corr.min
+Hyper‑parameters live in two YAMLs:
 
-parameters:
-  param1:
-    max: 10
-    min: 1
-    distribution: int_uniform
-  param2:
-    max: 0.1
-    min: 0
-    distribution: uniform
-  param3:
-    values: [4, 8, 16, 32]
+| File                    | Purpose                          |
+| ----------------------- | -------------------------------- |
+| `params.yaml`           | Model size, optimizer, scheduler |
+| `features.yaml`         | Which feature streams to load    |
 
-command:
-  - ${env}
-  - ${interpreter}
-  - ${program}
-```
+In the `configs` directory, you can find the configurations used for our final models.
 
-Launch the sweep in wandb `wandb sweep /path/to/sweep.yaml --project project_name --name sweep_name`. In the ouput, wandb will log the sweep id. We will use this to launch the sweep later.
+## Reproducibility & Logging
 
-The wandb init will now override parameters from the yaml file as needed for each of the sweep agents.
+* All seeds are fixed via `vibe.utils.set_seed()`; provide `--seed` to CLI for deterministic runs.
+* Runs log metrics and artefacts to **Weights & Biases**; disable with `WANDB_MODE=disabled` in the environment.
+* Train stats, checkpoints, and configs are saved to `<output_dir>/<name>`. Unless overriden in the cli, `$OUTPUT_DIR` will be used.
 
-You can view the sweep specification on WandB. To start the sweep, run the batch job script and specify the sweep id:
-```
-sbatch scripts/sweep.sh your_sweep_id
-```
+## Execution time
 
-This will launch 16 nodes for 12 hours to explore the parameter space. To stop the sweep, arrest it on the WandB website or run `wandb sweep --stop your_sweep_id`. The nodes will wind down and exit gracefully.
+Training a single model takes around 45 minutes on an A100-40GB GPU. For the full model used in the competition four 20-model ensembles were trained separately and then combined to produce a single submission. For more details on this procedure, please refer to the preprint available below. Estimated compute time for the full model is around 60 GPU-hours, and the disk space required is around 960 GB. Max VRAM use per model is around 20 GB.
 
-## Make submission
+## License
 
-To make a submisison, run the `algonauts-submit` or the corresponding batch script.
+This project is licensed under the MIT License – see `LICENSE` for details.
 
-```
-usage: algonauts-submit [-h] --checkpoint CHECKPOINT [--name NAME] [--output_dir OUTPUT_DIR]
-
-Make submission for fMRI predictions
-
-options:
-  -h, --help            show this help message and exit
-  --checkpoint CHECKPOINT
-                        Checkpoint to load
-  --name NAME           Name of output file
-  --output_dir OUTPUT_DIR
-                        Root directory for outputs & checkpoints (default $OUTPUT_DIR or data/outputs)
-```
-
-Pass the `--checkpoint CHECKPOINT` option to the script to specify which model to make predictions from. The checkpoint is the WandB ID of the run. The script will load the fully trained model, and use that to make predictions on season 7 of friends.
-
-## TODO:
-- [ ] feature extraction entrypoint
+> Disclaimer: VIBE only provides wrappers that download or invoke external models for feature extraction. The authors do not redistribute model weights or the Algonauts dataset. When using this repository, you are responsible for ensuring compliance with the individual licenses and any usage restrictions.

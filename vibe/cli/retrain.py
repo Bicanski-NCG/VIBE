@@ -4,11 +4,11 @@ import wandb
 from pathlib import Path
 import os
 
-from algonauts.data import get_full_loader
-from algonauts.models import load_model_from_ckpt, load_initial_state
-from algonauts.training import create_optimizer_and_scheduler, full_loop
-from algonauts.utils import logger, ensure_paths_exist
-from algonauts.utils.viz import plot_diagnostics
+from vibe.dataset import get_full_loader
+from vibe.models import load_model_from_ckpt, load_initial_state
+from vibe.training import create_optimizer_and_scheduler, full_loop
+from vibe.utils import logger, ensure_paths_exist
+from vibe.utils.viz import plot_diagnostics
 
 
 def main(args=None, run_id=None, n_epochs=None):

@@ -1,12 +1,23 @@
 [project]
-name = "algonauts"
+name = "VIBE"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
+description = "Multimodal fMRI encoding model and training utilities (Algonauts 2025 — VIBE)"
+readme = {file = "README.md", content-type = "text/markdown"}
+authors = [
+    {name = "Daniel C. Schad", email = "schad@cbs.mpg.de"},
+    {name = "Shrey Dixit", email = "dixit@cbs.mpg.de"},
+    {name = "Janis Keck", email = "keck@cbs.mpg.de"},
+    {name = "Viktor Studenyak", email = "studenyak@cbs.mpg.de"},
+    {name = "Shrey Dixit", email = "dixit@cbs.mpg.de"},
+    {name = "Aleksander Shpilevoi", email = "dixit@cbs.mpg.de"},
+]
+
+# license = {file = "LICENSE"}
+keywords = ["fMRI", "multimodal", "brain decoding", "neuroscience", "machine learning"]
+
 requires-python = ">=3.10"
 dependencies = [
     "accelerate>=1.8.1",
-    "captum>=0.8.0",
     "h5py>=3.13.0",
     "ipykernel>=6.29.5",
     "ipywidgets>=8.1.7",
@@ -21,24 +32,34 @@ dependencies = [
     "wandb>=0.19.9",
 ]
 
-[tool.setuptools]
-packages = ["algonauts"]
-
-[tool.uv.workspace]
-members = ["algonauts/features/BEATs-Feature-Extraction"]
-
 [dependency-groups]
 dev = [
     "pytest>=8.4.0",
+    "ruff>=0.12.4",
 ]
 
+[tool.setuptools]
+packages = ["vibe"]
+
+[tool.uv.workspace]
+members = ["features/BEATs-Feature-Extraction"]
+
+
 [project.scripts]
-algonauts-train   = "algonauts.cli.train:main"
-algonauts-retrain = "algonauts.cli.retrain:main"
-algonauts-fit     = "algonauts.cli.fit:main"
-algonauts-submit  = "algonauts.cli.submit:main"
-algonauts-merge   = "algonauts.cli.merging:main"
+vibe-train   = "vibe.cli.train:main"
+vibe-retrain = "vibe.cli.retrain:main"
+vibe-fit     = "vibe.cli.fit:main"
+vibe-submit  = "vibe.cli.submit:main"
+vibe-merge   = "vibe.cli.merging:main"
 
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
+
+[project.urls]
+Homepage      = "https://github.com/Bicanski-NCG/VIBE"
+Documentation = "https://github.com/Bicanski-NCG/VIBE#readme"
+Source        = "https://github.com/Bicanski-NCG/VIBE"
+
+[tool.setuptools.package-data]
+"vibe" = ["py.typed"]

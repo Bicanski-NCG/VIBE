@@ -16,15 +16,7 @@ wheels/
 .ipynb_checkpoints/
 
 # Data files
-data/raw/fmri/*
-data/raw/stimuli/*
-data/features/*
-data/outputs/*
-
-# legacy data
-Features/
-fmri/
-feat_out/
+data/
 runs/
 
 # ignore env script

@@ -3,7 +3,7 @@
 #SBATCH -o runs/job_logs/%x-%j.out
 #SBATCH -e runs/job_logs/%x-%j.err
 # Job name
-#SBATCH -J algonauts-train
+#SBATCH -J vibe-train
 #
 #SBATCH --ntasks=1
 #
@@ -17,4 +17,4 @@
 
 . scripts/env.sh
 
-uv run algonauts-train "$@"
+uv run vibe-train "$@"

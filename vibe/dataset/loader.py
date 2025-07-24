@@ -3,8 +3,8 @@ import torch
 from torch.utils.data import DataLoader
 from pathlib import Path
 
-from algonauts.data import FMRI_Dataset, split_dataset_by_name, collate_fn, make_group_weights
-from algonauts.utils import logger
+from vibe.dataset import FMRI_Dataset, split_dataset_by_name, collate_fn, make_group_weights
+from vibe.utils import logger
 
 
 def get_train_val_loaders(config):

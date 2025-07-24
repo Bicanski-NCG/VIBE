@@ -3,7 +3,7 @@
 #SBATCH -o runs/job_logs/%x-%j.out
 #SBATCH -e runs/job_logs/%x-%j.err
 # Job name
-#SBATCH -J algonauts-sweep
+#SBATCH -J vibe-sweep
 #SBATCH --array=0-19
 #SBATCH --ntasks=1
 #

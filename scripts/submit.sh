@@ -3,7 +3,7 @@
 #SBATCH -o runs/job_logs/%x-%j.out
 #SBATCH -e runs/job_logs/%x-%j.err
 # Job name
-#SBATCH -J algonauts-submission
+#SBATCH -J vibe-submit
 #
 #SBATCH --ntasks=1
 #
@@ -17,4 +17,4 @@
 
 . scripts/env.sh
 
-uv run algonauts-submit "$@"
+uv run vibe-submit "$@"

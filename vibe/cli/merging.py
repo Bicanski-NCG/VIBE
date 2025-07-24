@@ -31,7 +31,7 @@ import zipfile
 
 import numpy as np
 import yaml
-from algonauts.utils.viz import load_and_label_atlas
+from vibe.utils.viz import load_and_label_atlas
 
 
 def load_submission(path: Path, cache: Dict[str, dict]) -> dict:

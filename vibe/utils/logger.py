@@ -1,4 +1,4 @@
-# algonauts/utils/logger.py
+# vibe/utils/logger.py
 import logging
 from contextvars import ContextVar
 from contextlib import contextmanager
@@ -15,7 +15,7 @@ class IndentFilter(logging.Filter):
         return True
 
 
-_logger = logging.getLogger("algonauts")
+_logger = logging.getLogger("vibe")
 _logger.setLevel(logging.INFO)
 _handler = logging.StreamHandler()
 _handler.setFormatter(

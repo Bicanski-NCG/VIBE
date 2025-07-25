@@ -3,6 +3,18 @@
 > End-to-end pipeline for voxel-wise decoding of fMRI time-series from multimodal stimulus features (audio · video · text).
 > The codebase was built for the **Algonauts 2025 Challenge** and is being released to foster open research.
 
+## Model architecture
+![Model architecture](figures/model.png)
+
+VIBE pairs a modality-fusion Transformer with a prediction Transformer to translate multimodal movie features into voxel-wise fMRI time-series.  Audio (BEATs, Whisper), video (SlowFast, V-JEPA 2, Qwen-Omni) and text (Qwen 2.5 14B, LaBSE) embeddings are first linearly projected to 256 d and enriched with a subject embedding; a single self-attention layer then fuses these per-TR representations across modalities. The resulting feature stack is concatenated and fed to a two-layer Transformer decoder that models temporal dynamics using rotary positional embeddings and no causal mask, letting each time-point attend to both past and future context. A lightweight head maps the decoder output to 1 000 Schaefer parcels, trained under a Pearson-correlation loss with a small MSE term for scale anchoring (λ = 0.03). Twenty independent seeds are ensembled, with specialised sub-models for visual cortex and the default-mode network, yielding mean parcel-wise r = 0.3225 on in-distribution data (Friends S07) and 0.2125 on six out-of-distribution films – a first-place Phase-1 and second place Pase -2 score in the Algonauts 2025 Challenge.
+
+![](figures/s07_scores.png)
+![](figures/ood_scores.png)
+
+### Preprint
+
+More information on model and can be found [in the preprint](https://arxiv.org/abs/2507.17958).
+
 ## Installation
 
 1. Download stimulus materials and fMRI data from the [official Algonauts repository](https://algonautsproject.com/braindata.html).

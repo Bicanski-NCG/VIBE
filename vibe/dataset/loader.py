@@ -96,8 +96,6 @@ def get_full_loader(config):
     """
     Return a DataLoader over the *entire* dataset (train + val merged).
     """
-    norm_stats = torch.load("normalization_stats.pt")
-    logger.info("📏 Loaded voxel‑wise normalization stats.")
 
     features_dir = Path(config.features_dir)
     config.features = {n: str(features_dir / p) for n, p in config.features.items()}
@@ -108,7 +106,7 @@ def get_full_loader(config):
         input_dims=config.input_dims,
         modalities=config.modalities,
         noise_std=0.0,
-        normalization_stats=norm_stats,
+        normalization_stats=None,
         modality_dropout_mode = config.modality_dropout_mode,
         modality_dropout_prob = config.modality_dropout_prob,
         normalize_features = config.use_normalization,

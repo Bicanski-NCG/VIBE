@@ -2,7 +2,6 @@ import wandb
 import argparse
 import os
 from vibe.utils import logger
-from vibe.utils import ensure_paths_exist
 from vibe.cli.train import main as train_main
 from vibe.cli.retrain import main as retrain_main
 

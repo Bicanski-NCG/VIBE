@@ -98,6 +98,31 @@ In the `configs` directory, you can find the configurations used for our final m
 
 Training a single model takes around 45 minutes on an A100-40GB GPU. For the full model used in the competition four 20-model ensembles were trained separately and then combined to produce a single submission. For more details on this procedure, please refer to the preprint available below. Estimated compute time for the full model is around 60 GPU-hours, and the disk space required is around 960 GB. Max VRAM use per model is around 20 GB.
 
+##  Preprint
+
+The preprint is available on arXiv:
+
+>  [VIBE: Video-Input Brain Encoder for fMRI Response Modeling](https://arxiv.org/abs/2507.17958)  
+> Daniel Carlstrom Schad, Shrey Dixit, Janis Keck, Viktor Studenyak, Aleksandr Shpilevoi, Andrej Bicanski (2025)
+
+---
+
+##  Citation
+
+If you use this codebase or refer to this work in your research, please cite us:
+
+```bibtex
+@misc{schad2025vibevideoinputbrainencoder,
+  title        = {VIBE: Video-Input Brain Encoder for fMRI Response Modeling}, 
+  author       = {Daniel Carlstrom Schad and Shrey Dixit and Janis Keck and Viktor Studenyak and Aleksandr Shpilevoi and Andrej Bicanski},
+  year         = {2025},
+  eprint       = {2507.17958},
+  archivePrefix= {arXiv},
+  primaryClass = {cs.LG},
+  url          = {https://arxiv.org/abs/2507.17958}
+}
+```
+
 ## License
 
 This project is licensed under the MIT License – see `LICENSE` for details.

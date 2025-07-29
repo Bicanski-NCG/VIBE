@@ -30,7 +30,7 @@ Algonauts-Decoding/
 │   ├── data/                 # Dataset, loader, collate
 │   ├── models/               # Decoder, ensembling, utilities
 │   ├── training/             # Loops, losses, metrics
-│   └── utils/                # Logging, adjacency, HRF, misc.
+│   └── utils/                # Logging, plotting, adjacency, misc.
 ├── features/                 # Audio / video / text feature extraction
 ├── configs/                  # YAML hyper‑parameters
 └── scripts/                  # Slurm & helper bash scripts
@@ -51,7 +51,7 @@ Algonauts-Decoding/
    ```bash
    export FEATURES_DIR="/path/to/features"       # Directory where the features are saved/stored
    export DATA_DIR="/path/to/fmri"               # Directory where the fMRI data is stored
-   export OUTPUTS_DIR="/path/to/outputs"         # Directory where outputs (checkpoints, submission-files, etc.) will be saved
+   export OUTPUT_DIR="/path/to/outputs"         # Directory where outputs (checkpoints, submission-files, etc.) will be saved
    export WANDB_ENTITY="ncg-algonauts"           # (team) or username that owns the project
    export WANDB_PROJECT="fmri-model"             # project name
    ```

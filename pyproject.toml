@@ -8,11 +8,8 @@ authors = [
     {name = "Shrey Dixit", email = "dixit@cbs.mpg.de"},
     {name = "Janis Keck", email = "keck@cbs.mpg.de"},
     {name = "Viktor Studenyak", email = "studenyak@cbs.mpg.de"},
-    {name = "Shrey Dixit", email = "dixit@cbs.mpg.de"},
-    {name = "Aleksander Shpilevoi", email = "dixit@cbs.mpg.de"},
 ]
 
-# license = {file = "LICENSE"}
 keywords = ["fMRI", "multimodal", "brain decoding", "neuroscience", "machine learning"]
 
 requires-python = ">=3.10"
@@ -23,7 +20,7 @@ dependencies = [
     "ipywidgets>=8.1.7",
     "labml-nn>=0.4.137",
     "matplotlib>=3.10.1",
-    "nilearn>=0.10.4",
+    "nilearn<0.12.0",
     "numpy==1.26.4",
     "pyyaml>=6.0.2",
     "seaborn>=0.13.2",
@@ -43,7 +40,6 @@ packages = ["vibe"]
 
 [tool.uv.workspace]
 members = ["features/BEATs-Feature-Extraction"]
-
 
 [project.scripts]
 vibe-train   = "vibe.cli.train:main"

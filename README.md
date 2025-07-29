@@ -6,7 +6,7 @@
 ## Model architecture
 ![Model architecture](figures/model.png)
 
-VIBE pairs a modality-fusion Transformer with a prediction Transformer to translate multimodal movie features into voxel-wise fMRI time-series.  Audio (BEATs, Whisper), video (SlowFast, V-JEPA 2, Qwen-Omni) and text (Qwen 2.5 14B, LaBSE) embeddings are first linearly projected to 256 d and enriched with a subject embedding; a single self-attention layer then fuses these per-TR representations across modalities. The resulting feature stack is concatenated and fed to a two-layer Transformer decoder that models temporal dynamics using rotary positional embeddings and no causal mask, letting each time-point attend to both past and future context. A lightweight head maps the decoder output to 1 000 Schaefer parcels, trained under a Pearson-correlation loss with a small MSE term for scale anchoring (λ = 0.03). Twenty independent seeds are ensembled, with specialised sub-models for visual cortex and the default-mode network, yielding mean parcel-wise r = 0.3225 on in-distribution data (Friends S07) and 0.2125 on six out-of-distribution films – a first-place Phase-1 and second place Pase -2 score in the Algonauts 2025 Challenge.
+VIBE pairs a modality-fusion Transformer with a prediction Transformer to translate multimodal movie features into voxel-wise fMRI time-series.  Audio (BEATs, Whisper), video (SlowFast, V-JEPA 2, Qwen-Omni) and text (Qwen 2.5 14B, LaBSE) embeddings are first linearly projected to 256 d and enriched with a subject embedding; a single self-attention layer then fuses these per-TR representations across modalities. The resulting feature stack is concatenated and fed to a two-layer Transformer decoder that models temporal dynamics using rotary positional embeddings and no causal mask, letting each time-point attend to both past and future context. A lightweight head maps the decoder output to 1 000 Schaefer parcels, trained under a Pearson-correlation loss with a small MSE term for scale anchoring (λ = 0.03). Twenty independent seeds are ensembled, with specialised sub-models for visual cortex and the default-mode network, yielding mean parcel-wise r = 0.3225 on in-distribution data (Friends S07) and 0.2125 on six out-of-distribution films – a first-place Phase-1 and second place Pase-2 score in the Algonauts 2025 Challenge.
 
 ![](figures/s07_scores.png)
 ![](figures/ood_scores.png)
@@ -98,23 +98,19 @@ In the `configs` directory, you can find the configurations used for our final m
 
 Training a single model takes around 45 minutes on an A100-40GB GPU. For the full model used in the competition four 20-model ensembles were trained separately and then combined to produce a single submission. For more details on this procedure, please refer to the preprint available below. Estimated compute time for the full model is around 60 GPU-hours, and the disk space required is around 960 GB. Max VRAM use per model is around 20 GB.
 
-##  Preprint
+##  Citation
 
 The preprint is available on arXiv:
 
 >  [VIBE: Video-Input Brain Encoder for fMRI Response Modeling](https://arxiv.org/abs/2507.17958)  
-> Daniel Carlstrom Schad, Shrey Dixit, Janis Keck, Viktor Studenyak, Aleksandr Shpilevoi, Andrej Bicanski (2025)
-
----
-
-##  Citation
+> Daniel Carlström Schad, Shrey Dixit, Janis Keck, Viktor Studenyak, Aleksandr Shpilevoi, Andrej Bicanski (2025)
 
 If you use this codebase or refer to this work in your research, please cite us:
 
 ```bibtex
 @misc{schad2025vibevideoinputbrainencoder,
   title        = {VIBE: Video-Input Brain Encoder for fMRI Response Modeling}, 
-  author       = {Daniel Carlstrom Schad and Shrey Dixit and Janis Keck and Viktor Studenyak and Aleksandr Shpilevoi and Andrej Bicanski},
+  author       = {Daniel Carlström Schad and Shrey Dixit and Janis Keck and Viktor Studenyak and Aleksandr Shpilevoi and Andrej Bicanski},
   year         = {2025},
   eprint       = {2507.17958},
   archivePrefix= {arXiv},
